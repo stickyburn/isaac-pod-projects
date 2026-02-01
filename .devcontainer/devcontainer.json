@@ -1,7 +1,7 @@
 {
   "name": "Isaac Pod Development",
   "image": "stickyburn/isaac-pod:latest",
-  "workspaceFolder": "/workspace/storage",
+  "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
   "runArgs": [
     "--platform=linux/amd64"
