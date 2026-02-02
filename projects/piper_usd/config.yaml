@@ -1,5 +1,5 @@
-asset_path: /workspace/storage/projects/agilex_piper/urdf/piper.urdf
-usd_dir: /workspace/storage/projects
+asset_path: /workspace/storage/isaac-pod-projects/projects/piper_arm/urdf/piper.urdf
+usd_dir: /workspace/storage/isaac-pod-projects/projects/piper_usd
 usd_file_name: piper_arm.usd
 force_usd_conversion: true
 make_instanceable: true

@@ -1,0 +1,12 @@
+{
+  "assets": [
+    "/workspace/assets/Boxed/blue_tin.usd",
+    "/workspace/assets/Boxed/mustard_jar.usd",
+    "/workspace/assets/Boxed/oil_tin.usd",
+    "/workspace/assets/Boxed/salt_box.usd",
+    "/workspace/assets/Candles/Medium_Fat.usd",
+    "/workspace/assets/Candles/TallThin.usd",
+    "/workspace/assets/Containers/MasonJar.usd",
+    "/workspace/assets/Containers/TinCan.usd"
+  ]
+}
