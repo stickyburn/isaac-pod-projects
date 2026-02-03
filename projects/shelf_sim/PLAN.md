@@ -72,20 +72,24 @@ flowchart LR
 
 **Implementation Steps**
 
-- **Step 1.1**: Piper Arm Validation (`scripts/test_piper_arm.py`)
-  - Headless `Articulation` spawn confirmed: fixed base, 8 joints, names match URDF
-  - No NaNs in state, stable over 5s (0 drift), joint actuation hit targets within tolerance
-  - Result: **PASS** (latest report: `projects/shelf_sim/reports/test_piper_arm_report_20260203_031429.md`)
+- ✅ **Step 1.1**: Piper Arm Validation (`scripts/test_piper_arm.py`)
+  - Command: `./projects/shelf_sim/scripts/test_piper_arm.py --headless`
+  - Tested: headless `Articulation` spawn, fixed base, 8 joints, URDF names, NaN checks, 5s stability, joint actuation
+  - Result: **PASS** (report: `projects/shelf_sim/reports/test_piper_arm_report_20260203_031429.md`)
 
-- **Step 1.2**: Test All 8 USD Items (`scripts/test_assets.py`)
-  - Drop each asset into a kinematic bin on a table (headless) to validate collisions and stability
-  - Checks: asset spawns, falls, settles (low velocity), and remains inside the bin bounds
-  - Writes a concise pass/fail report under `projects/shelf_sim/reports/`
+- ✅ **Step 1.2**: Test All 8 USD Items (`scripts/test_assets.py`)
+  - Command: `./projects/shelf_sim/scripts/test_assets.py --headless`
+  - Tested: drop into kinematic bin on table; spawn, fall distance, settle velocity, inside-bin bounds
+  - Params: drop height 0.50 m, test 3.00 s, mass 0.50 kg, stable vel eps 0.020 m/s
+  - Physics setup: applied `RigidBodyAPI` + `CollisionAPI`, and convex-hull mesh collisions for dynamic bodies
+  - Result: **PASS** (8/8). MasonJar had 1 mesh prim without points (skipped). Report: `projects/shelf_sim/reports/test_assets_report_20260203_035617.md`
 
-- **Step 1.3**: Combined Scene Test (`scripts/test_scene.py`)
-  - Spawn Piper arm + ground plane + dome light + 1 item (e.g., salt_box.usd)
-  - Verify scene stable for 5+ seconds, no collisions/explosions
-  - Run headless, optionally with GUI for debugging
+- ✅ **Step 1.3**: Combined Scene Test (`scripts/test_scene.py`)
+  - Command: `./projects/shelf_sim/scripts/test_scene.py --headless --record-video --camera-mode both`
+  - Tested: Piper arm + table + bin + lights + all 8 assets; arm health (`arm_ok`) during drops
+  - Params: drop height 0.50 m, test 3.00 s, mass 0.50 kg, stable vel eps 0.020 m/s
+  - Capture: top + side videos saved under `projects/shelf_sim/reports/videos/`
+  - Result: **PASS** (8/8) with arm OK. Report: `projects/shelf_sim/reports/test_scene_report_20260203_044027.md`
 
 - **Step 1.4**: Asset Configuration (if needed)
   - Create `config/assets.yaml` to override mass/collision for assets that failed Step 1.2
@@ -236,3 +240,10 @@ flowchart LR
 - GUI tasks (asset inspection, camera view) require KASM VNC.
 - Headless is recommended for large-scale dataset generation.
 - Datasets can be large; store outside repo if needed.
+
+---
+
+## Visual Notes (Current Runs)
+- MasonJar: glass container not visible in renders (lid visible), but physics behaves as if present.
+- Candles: TallThin and Medium_Fat are not visible; only faint shadow in some views.
+- Piper arm: present but static in `test_scene.py` and appears untextured gray.
