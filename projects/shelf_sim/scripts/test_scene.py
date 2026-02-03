@@ -49,7 +49,7 @@ BIN_INNER_MARGIN_M = 0.02
 ROBOT_BASE_POS = (-0.8, 0.0, 0.0)
 ROBOT_BASE_ROT = (1.0, 0.0, 0.0, 0.0)
 
-VIDEO_START_S = 0.5
+VIDEO_START_S = 0.1
 VIDEO_DURATION_S = 3.0
 VIDEO_FPS = 30
 VIDEO_WIDTH = 1280
@@ -569,7 +569,6 @@ def main() -> int:
     results: list[tuple[str, str]] = []
 
     render_cfg = sim_utils.RenderCfg(
-        rendering_mode="performance",
         enable_translucency=True,
     )
     sim_cfg = sim_utils.SimulationCfg(render=render_cfg)

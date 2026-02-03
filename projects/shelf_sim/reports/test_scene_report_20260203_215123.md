@@ -1,6 +1,6 @@
-[INFO] Report path: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/test_scene_report_20260203_044027.md
-[INFO] Start time (UTC): 20260203_044027
-[INFO] Command: ./projects/shelf_sim/scripts/test_scene.py --headless --record-video --camera-mode both
+[INFO] Report path: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/test_scene_report_20260203_215123.md
+[INFO] Start time (UTC): 20260203_215123
+[INFO] Command: ./scripts/test_scene.py --headless --record-video
 [INFO] Manifest: /workspace/storage/isaac-pod-projects/projects/shelf_sim/assets_manifest.json
 
 ================================================================================
@@ -13,13 +13,12 @@ Combined Scene Test (Piper Arm + Assets)
 [INFO] Forced mass: 0.50 kg
 [INFO] Stable vel eps: 0.020 m/s
 [INFO] Robot base pos: (-0.8, 0.0, 0.0)
-[INFO] Camera mode: both
-[INFO] Side camera pos/target: (1.3, -1.2, 1.2) -> (0.0, 0.0, 0.85)
+[INFO] Camera mode: top
 [INFO] Top camera pos/target: (0.0, 0.0, 2.2) -> (0.0, 0.0, 0.75)
 [INFO] Simulation device: cuda:0
-[INFO] Simulation dt: 0.01
+[INFO] Simulation dt: 0.016666666666666666
 [INFO] Camera recording enabled.
-[INFO] Video window: start=0.50s duration=3.00s fps=30
+[INFO] Video window: start=0.10s duration=3.00s fps=30
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 1/8: /workspace/assets/Boxed/blue_tin.usd
@@ -27,7 +26,8 @@ Combined Scene Test (Piper Arm + Assets)
 [INFO] Applied RigidBodyAPI to asset root.
 [INFO] Applied CollisionAPI to 5 prim(s).
 [INFO] Applied convex-hull mesh collisions to 5 prim(s).
-PASS | z=0.806 m | vel=0.000 m/s | fall=0.664 m | inside_bin=True | arm_ok=True
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_000_blue_tin.mp4
+PASS | z=0.770 m | vel=0.002 m/s | fall=0.700 m | inside_bin=True | arm_ok=True
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 2/8: /workspace/assets/Boxed/mustard_jar.usd
@@ -35,7 +35,8 @@ PASS | z=0.806 m | vel=0.000 m/s | fall=0.664 m | inside_bin=True | arm_ok=True
 [INFO] Applied RigidBodyAPI to asset root.
 [INFO] Applied CollisionAPI to 3 prim(s).
 [INFO] Applied convex-hull mesh collisions to 3 prim(s).
-PASS | z=0.796 m | vel=0.002 m/s | fall=0.674 m | inside_bin=True | arm_ok=True
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_001_mustard_jar.mp4
+PASS | z=0.794 m | vel=0.002 m/s | fall=0.676 m | inside_bin=True | arm_ok=True
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 3/8: /workspace/assets/Boxed/oil_tin.usd
@@ -43,7 +44,8 @@ PASS | z=0.796 m | vel=0.002 m/s | fall=0.674 m | inside_bin=True | arm_ok=True
 [INFO] Applied RigidBodyAPI to asset root.
 [INFO] Applied CollisionAPI to 2 prim(s).
 [INFO] Applied convex-hull mesh collisions to 2 prim(s).
-PASS | z=0.793 m | vel=0.001 m/s | fall=0.677 m | inside_bin=True | arm_ok=True
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_002_oil_tin.mp4
+PASS | z=0.792 m | vel=0.000 m/s | fall=0.678 m | inside_bin=True | arm_ok=True
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 4/8: /workspace/assets/Boxed/salt_box.usd
@@ -51,7 +53,8 @@ PASS | z=0.793 m | vel=0.001 m/s | fall=0.677 m | inside_bin=True | arm_ok=True
 [INFO] Applied RigidBodyAPI to asset root.
 [INFO] Applied CollisionAPI to 1 prim(s).
 [INFO] Applied convex-hull mesh collisions to 1 prim(s).
-PASS | z=0.768 m | vel=0.001 m/s | fall=0.702 m | inside_bin=True | arm_ok=True
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_003_salt_box.mp4
+PASS | z=0.793 m | vel=0.001 m/s | fall=0.677 m | inside_bin=True | arm_ok=True
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 5/8: /workspace/assets/Candles/Medium_Fat.usd
@@ -59,7 +62,8 @@ PASS | z=0.768 m | vel=0.001 m/s | fall=0.702 m | inside_bin=True | arm_ok=True
 [INFO] Applied RigidBodyAPI to asset root.
 [INFO] Applied CollisionAPI to 2 prim(s).
 [INFO] Applied convex-hull mesh collisions to 2 prim(s).
-PASS | z=0.770 m | vel=0.001 m/s | fall=0.700 m | inside_bin=True | arm_ok=True
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_004_Medium_Fat.mp4
+PASS | z=0.770 m | vel=0.004 m/s | fall=0.700 m | inside_bin=True | arm_ok=True
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 6/8: /workspace/assets/Candles/TallThin.usd
@@ -67,7 +71,8 @@ PASS | z=0.770 m | vel=0.001 m/s | fall=0.700 m | inside_bin=True | arm_ok=True
 [INFO] Applied RigidBodyAPI to asset root.
 [INFO] Applied CollisionAPI to 2 prim(s).
 [INFO] Applied convex-hull mesh collisions to 2 prim(s).
-PASS | z=0.775 m | vel=0.001 m/s | fall=0.695 m | inside_bin=True | arm_ok=True
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_005_TallThin.mp4
+PASS | z=0.775 m | vel=0.000 m/s | fall=0.695 m | inside_bin=True | arm_ok=True
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 7/8: /workspace/assets/Containers/MasonJar.usd
@@ -76,7 +81,8 @@ PASS | z=0.775 m | vel=0.001 m/s | fall=0.695 m | inside_bin=True | arm_ok=True
 [INFO] Applied CollisionAPI to 2 prim(s).
 [INFO] Applied convex-hull mesh collisions to 2 prim(s).
 [INFO] Skipped 1 mesh prim(s) without points.
-PASS | z=0.771 m | vel=0.001 m/s | fall=0.699 m | inside_bin=True | arm_ok=True
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_006_MasonJar.mp4
+PASS | z=0.803 m | vel=0.001 m/s | fall=0.667 m | inside_bin=True | arm_ok=True
 
 --------------------------------------------------------------------------------
 [INFO] Testing asset 8/8: /workspace/assets/Containers/TinCan.usd
@@ -84,6 +90,5 @@ PASS | z=0.771 m | vel=0.001 m/s | fall=0.699 m | inside_bin=True | arm_ok=True
 [INFO] Applied RigidBodyAPI to asset root.
 [INFO] Applied CollisionAPI to 1 prim(s).
 [INFO] Applied convex-hull mesh collisions to 1 prim(s).
+[INFO] Recording video: /workspace/storage/isaac-pod-projects/projects/shelf_sim/reports/videos/scene_007_TinCan.mp4
 PASS | z=0.809 m | vel=0.001 m/s | fall=0.661 m | inside_bin=True | arm_ok=True
-
-2026-02-03T04:42:42Z [155,187ms] [Warning] [omni.physx.tensors.plugin] prim '/World/Env_0/Assets/asset_007/TinCan' was deleted while being used by a shape in a tensor view class. The physics.tensors simulationView was invalidated.
