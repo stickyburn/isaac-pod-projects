@@ -27,11 +27,7 @@ from isaaclab.app import AppLauncher
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MANIFEST = REPO_ROOT / "projects/shelf_sim/assets_manifest.json"
 REPORTS_DIR = REPO_ROOT / "projects/shelf_sim/reports"
-
-PIPER_USD_CONFIG_PATH = REPO_ROOT / "projects/piper_usd/config.yaml"
-DEFAULT_PIPER_URDF_PATH = REPO_ROOT / "projects/piper_arm/urdf/piper.urdf"
-DEFAULT_PIPER_USD_DIR = REPO_ROOT / "projects/piper_usd"
-DEFAULT_PIPER_USD_NAME = "piper_arm.usd"
+DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usd"
 
 SIM_DEVICE = "cuda:0"
 DROP_HEIGHT_M = 0.5
@@ -67,6 +63,7 @@ parser = argparse.ArgumentParser(
     description="Combined scene test with Piper arm + assets (optional video recording)."
 )
 parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+parser.add_argument("--robot-usd", type=Path, default=DEFAULT_ROBOT_USD)
 parser.add_argument("--drop-height-m", type=float, default=DROP_HEIGHT_M)
 parser.add_argument("--test-seconds", type=float, default=TEST_SECONDS)
 parser.add_argument("--mass-kg", type=float, default=FORCED_MASS_KG)
@@ -108,22 +105,9 @@ from isaaclab.sim import schemas as schema_utils
 from isaaclab.sensors.camera import Camera, CameraCfg
 from pxr import PhysxSchema, UsdGeom, UsdPhysics
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - optional dependency
-    yaml = None
+import imageio.v2 as imageio
 
-try:
-    import imageio.v2 as imageio
-
-    _HAS_IMAGEIO = True
-except Exception:  # pragma: no cover - optional dependency
-    try:
-        import imageio  # type: ignore
-
-        _HAS_IMAGEIO = True
-    except Exception:
-        _HAS_IMAGEIO = False
+_HAS_IMAGEIO = True
 
 REPORT_WRITER = None
 
@@ -468,68 +452,6 @@ def is_inside_bin(pos_x: float, pos_y: float) -> bool:
     return abs(pos_x - center_x) <= half_x and abs(pos_y - center_y) <= half_y
 
 
-def _load_yaml(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    if yaml is None:
-        log(f"[WARNING] PyYAML not available; using defaults for {path}.")
-        return {}
-    data = yaml.safe_load(path.read_text())
-    return data or {}
-
-
-def resolve_piper_paths() -> tuple[Path, Path, dict]:
-    cfg = _load_yaml(PIPER_USD_CONFIG_PATH)
-    urdf_path = Path(cfg.get("asset_path") or DEFAULT_PIPER_URDF_PATH)
-    usd_dir = Path(cfg.get("usd_dir") or DEFAULT_PIPER_USD_DIR)
-    usd_name = cfg.get("usd_file_name") or DEFAULT_PIPER_USD_NAME
-    return urdf_path, usd_dir / usd_name, cfg
-
-
-def ensure_piper_usd(urdf_path: Path, usd_path: Path, cfg: dict) -> None:
-    if usd_path.exists():
-        return
-
-    log(f"[INFO] Piper USD not found at {usd_path}. Converting URDF -> USD...")
-    if not urdf_path.exists():
-        raise FileNotFoundError(f"URDF not found at {urdf_path}.")
-
-    usd_path.parent.mkdir(parents=True, exist_ok=True)
-
-    from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg
-
-    joint_drive_cfg = cfg.get("joint_drive") or {}
-    gains_cfg = joint_drive_cfg.get("gains") or {}
-    converter_cfg = UrdfConverterCfg(
-        asset_path=str(urdf_path),
-        usd_dir=str(usd_path.parent),
-        usd_file_name=usd_path.name,
-        force_usd_conversion=bool(cfg.get("force_usd_conversion", False)),
-        make_instanceable=bool(cfg.get("make_instanceable", True)),
-        fix_base=bool(cfg.get("fix_base", True)),
-        root_link_name=cfg.get("root_link_name"),
-        link_density=float(cfg.get("link_density", 0.0)),
-        merge_fixed_joints=bool(cfg.get("merge_fixed_joints", True)),
-        convert_mimic_joints_to_normal_joints=bool(cfg.get("convert_mimic_joints_to_normal_joints", False)),
-        joint_drive=UrdfConverterCfg.JointDriveCfg(
-            drive_type=joint_drive_cfg.get("drive_type", "force"),
-            target_type=joint_drive_cfg.get("target_type", "position"),
-            gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
-                stiffness=gains_cfg.get("stiffness", 100.0),
-                damping=gains_cfg.get("damping", 1.0),
-            ),
-        ),
-        collider_type=cfg.get("collider_type", "convex_hull"),
-        self_collision=bool(cfg.get("self_collision", False)),
-        replace_cylinders_with_capsules=bool(cfg.get("replace_cylinders_with_capsules", False)),
-        collision_from_visuals=bool(cfg.get("collision_from_visuals", False)),
-    )
-    UrdfConverter(converter_cfg)
-
-    if not usd_path.exists():
-        raise RuntimeError(f"URDF conversion did not create {usd_path}.")
-
-
 def build_piper_arm_cfg(usd_path: Path) -> ArticulationCfg:
     return ArticulationCfg(
         spawn=sim_utils.UsdFileCfg(
@@ -618,9 +540,10 @@ def main() -> int:
         log("[ERROR] No assets found in manifest.")
         return 1
 
-    urdf_path, usd_path, cfg = resolve_piper_paths()
-    ensure_piper_usd(urdf_path, usd_path, cfg)
-    log(f"[INFO] Using Piper USD: {usd_path}")
+    if not args_cli.robot_usd.exists():
+        log(f"[ERROR] Robot USD not found: {args_cli.robot_usd}")
+        return 1
+    log(f"[INFO] Using Piper USD: {args_cli.robot_usd}")
 
     log(f"[INFO] Asset count: {len(asset_paths)}")
     log(f"[INFO] Drop height: {args_cli.drop_height_m:.2f} m")
@@ -645,10 +568,16 @@ def main() -> int:
     missing_assets = 0
     results: list[tuple[str, str]] = []
 
+    render_cfg = sim_utils.RenderCfg(
+        rendering_mode="performance",
+        enable_translucency=True,
+    )
+    sim_cfg = sim_utils.SimulationCfg(render=render_cfg)
     with build_simulation_context(
         device=SIM_DEVICE,
         auto_add_lighting=False,
         add_ground_plane=True,
+        sim_cfg=sim_cfg,
     ) as sim:
         log(f"[INFO] Simulation device: {sim.device}")
         log(f"[INFO] Simulation dt: {sim.cfg.dt}")
@@ -661,7 +590,7 @@ def main() -> int:
         spawn_bin("/World/Env_0/Props")
         spawn_lights("/World/Env_0")
 
-        arm_cfg = build_piper_arm_cfg(usd_path)
+        arm_cfg = build_piper_arm_cfg(args_cli.robot_usd)
         arm = Articulation(arm_cfg.replace(prim_path="/World/Env_0/Robot"))
 
         cameras: dict[str, Camera] = {}

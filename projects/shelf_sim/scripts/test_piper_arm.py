@@ -10,10 +10,17 @@ Run headless: /opt/IsaacLab/isaaclab.sh -p scripts/test_piper_arm.py --headless
 
 """Launch Isaac Sim Simulator first."""
 
+import argparse
+from pathlib import Path
 from isaaclab.app import AppLauncher
 
-# launch omniverse app (isaaclab.sh wrapper handles --headless flag)
-simulation_app = AppLauncher().app
+parser = argparse.ArgumentParser(description="Test Piper arm articulation")
+parser.add_argument("--robot-usd", type=Path, default=None)
+AppLauncher.add_app_launcher_args(parser)
+args_cli = parser.parse_args()
+
+app_launcher = AppLauncher(args_cli)
+simulation_app = app_launcher.app
 
 """Rest everything follows."""
 
@@ -30,17 +37,15 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.sim import build_simulation_context
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover - optional dependency
-    yaml = None
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PIPER_USD_CONFIG_PATH = REPO_ROOT / "projects/piper_usd/config.yaml"
-DEFAULT_PIPER_URDF_PATH = REPO_ROOT / "projects/piper_arm/urdf/piper.urdf"
-DEFAULT_PIPER_USD_DIR = REPO_ROOT / "projects/piper_usd"
-DEFAULT_PIPER_USD_NAME = "piper_arm.usd"
+DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usd"
 REPORTS_DIR = REPO_ROOT / "projects/shelf_sim/reports"
+
+
+if args_cli.robot_usd is None:
+    args_cli.robot_usd = DEFAULT_ROBOT_USD
+
+
 REPORT_WRITER = None
 
 
@@ -67,68 +72,6 @@ def log(message: str = "") -> None:
         REPORT_WRITER.log(message)
     else:
         print(message)
-
-
-def _load_yaml(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    if yaml is None:
-        log(f"[WARNING] PyYAML not available; using defaults for {path}.")
-        return {}
-    data = yaml.safe_load(path.read_text())
-    return data or {}
-
-
-def resolve_piper_paths() -> tuple[Path, Path, dict]:
-    cfg = _load_yaml(PIPER_USD_CONFIG_PATH)
-    urdf_path = Path(cfg.get("asset_path") or DEFAULT_PIPER_URDF_PATH)
-    usd_dir = Path(cfg.get("usd_dir") or DEFAULT_PIPER_USD_DIR)
-    usd_name = cfg.get("usd_file_name") or DEFAULT_PIPER_USD_NAME
-    return urdf_path, usd_dir / usd_name, cfg
-
-
-def ensure_piper_usd(urdf_path: Path, usd_path: Path, cfg: dict) -> None:
-    if usd_path.exists():
-        return
-
-    log(f"[INFO] Piper USD not found at {usd_path}. Converting URDF -> USD...")
-    if not urdf_path.exists():
-        raise FileNotFoundError(f"URDF not found at {urdf_path}.")
-
-    usd_path.parent.mkdir(parents=True, exist_ok=True)
-
-    from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg
-
-    joint_drive_cfg = cfg.get("joint_drive") or {}
-    gains_cfg = joint_drive_cfg.get("gains") or {}
-    converter_cfg = UrdfConverterCfg(
-        asset_path=str(urdf_path),
-        usd_dir=str(usd_path.parent),
-        usd_file_name=usd_path.name,
-        force_usd_conversion=bool(cfg.get("force_usd_conversion", False)),
-        make_instanceable=bool(cfg.get("make_instanceable", True)),
-        fix_base=bool(cfg.get("fix_base", True)),
-        root_link_name=cfg.get("root_link_name"),
-        link_density=float(cfg.get("link_density", 0.0)),
-        merge_fixed_joints=bool(cfg.get("merge_fixed_joints", True)),
-        convert_mimic_joints_to_normal_joints=bool(cfg.get("convert_mimic_joints_to_normal_joints", False)),
-        joint_drive=UrdfConverterCfg.JointDriveCfg(
-            drive_type=joint_drive_cfg.get("drive_type", "force"),
-            target_type=joint_drive_cfg.get("target_type", "position"),
-            gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
-                stiffness=gains_cfg.get("stiffness", 100.0),
-                damping=gains_cfg.get("damping", 1.0),
-            ),
-        ),
-        collider_type=cfg.get("collider_type", "convex_hull"),
-        self_collision=bool(cfg.get("self_collision", False)),
-        replace_cylinders_with_capsules=bool(cfg.get("replace_cylinders_with_capsules", False)),
-        collision_from_visuals=bool(cfg.get("collision_from_visuals", False)),
-    )
-    UrdfConverter(converter_cfg)
-
-    if not usd_path.exists():
-        raise RuntimeError(f"URDF conversion did not create {usd_path}.")
 
 
 def build_piper_arm_cfg(usd_path: Path) -> ArticulationCfg:
@@ -185,10 +128,13 @@ def main():
     log("Piper Arm Articulation Test")
     log("="*80)
 
-    urdf_path, usd_path, cfg = resolve_piper_paths()
-    ensure_piper_usd(urdf_path, usd_path, cfg)
-    log(f"[INFO] Using Piper USD: {usd_path}")
-    piper_arm_cfg = build_piper_arm_cfg(usd_path)
+    if not args_cli.robot_usd.exists():
+        raise FileNotFoundError(
+            f"Robot USD not found at {args_cli.robot_usd}. "
+            "The USD file must exist before running this test."
+        )
+    log(f"[INFO] Using Piper USD: {args_cli.robot_usd}")
+    piper_arm_cfg = build_piper_arm_cfg(args_cli.robot_usd)
 
     with build_simulation_context(
         device="cuda:0",
