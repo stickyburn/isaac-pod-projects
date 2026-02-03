@@ -5,7 +5,7 @@ This script verifies that the AgileX Piper arm loads correctly and all joints
 actuate within their URDF limits. It checks for physics stability over time.
 
 Run via Isaac Lab: /opt/IsaacLab/isaaclab.sh -p scripts/test_piper_arm.py
-Run with GUI: /opt/IsaacLab/isaaclab.sh -p scripts/test_piper_arm.py --headless
+Run headless: /opt/IsaacLab/isaaclab.sh -p scripts/test_piper_arm.py --headless
 """
 
 """Launch Isaac Sim Simulator first."""
@@ -17,112 +17,234 @@ simulation_app = AppLauncher().app
 
 """Rest everything follows."""
 
+from datetime import datetime, timezone
+from pathlib import Path
+import sys
+import traceback
+
 import torch
 
 import isaaclab.sim as sim_utils
+import isaacsim.core.utils.prims as prim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.sim import build_simulation_context
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency
+    yaml = None
 
-# Define Piper configuration
-# Joint names from URDF: fl_joint1-6 (revolute), fl_joint7-8 (prismatic gripper)
-PIPER_ARM_CFG = ArticulationCfg(
-    spawn=sim_utils.UsdFileCfg(
-        usd_path="/workspace/workspace/storage/projects/piper_usd/piper_arm.usd",
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=False,
-            max_depenetration_velocity=5.0,
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PIPER_USD_CONFIG_PATH = REPO_ROOT / "projects/piper_usd/config.yaml"
+DEFAULT_PIPER_URDF_PATH = REPO_ROOT / "projects/piper_arm/urdf/piper.urdf"
+DEFAULT_PIPER_USD_DIR = REPO_ROOT / "projects/piper_usd"
+DEFAULT_PIPER_USD_NAME = "piper_arm.usd"
+REPORTS_DIR = REPO_ROOT / "projects/shelf_sim/reports"
+REPORT_WRITER = None
+
+
+class ReportWriter:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._lines: list[str] = []
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text("")
+
+    def log(self, message: str = "") -> None:
+        print(message)
+        self._lines.append(message)
+        self.write()
+
+    def write(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        content = "\n".join(self._lines).rstrip() + "\n"
+        self.path.write_text(content)
+
+
+def log(message: str = "") -> None:
+    if REPORT_WRITER is not None:
+        REPORT_WRITER.log(message)
+    else:
+        print(message)
+
+
+def _load_yaml(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    if yaml is None:
+        log(f"[WARNING] PyYAML not available; using defaults for {path}.")
+        return {}
+    data = yaml.safe_load(path.read_text())
+    return data or {}
+
+
+def resolve_piper_paths() -> tuple[Path, Path, dict]:
+    cfg = _load_yaml(PIPER_USD_CONFIG_PATH)
+    urdf_path = Path(cfg.get("asset_path") or DEFAULT_PIPER_URDF_PATH)
+    usd_dir = Path(cfg.get("usd_dir") or DEFAULT_PIPER_USD_DIR)
+    usd_name = cfg.get("usd_file_name") or DEFAULT_PIPER_USD_NAME
+    return urdf_path, usd_dir / usd_name, cfg
+
+
+def ensure_piper_usd(urdf_path: Path, usd_path: Path, cfg: dict) -> None:
+    if usd_path.exists():
+        return
+
+    log(f"[INFO] Piper USD not found at {usd_path}. Converting URDF -> USD...")
+    if not urdf_path.exists():
+        raise FileNotFoundError(f"URDF not found at {urdf_path}.")
+
+    usd_path.parent.mkdir(parents=True, exist_ok=True)
+
+    from isaaclab.sim.converters import UrdfConverter, UrdfConverterCfg
+
+    joint_drive_cfg = cfg.get("joint_drive") or {}
+    gains_cfg = joint_drive_cfg.get("gains") or {}
+    converter_cfg = UrdfConverterCfg(
+        asset_path=str(urdf_path),
+        usd_dir=str(usd_path.parent),
+        usd_file_name=usd_path.name,
+        force_usd_conversion=bool(cfg.get("force_usd_conversion", False)),
+        make_instanceable=bool(cfg.get("make_instanceable", True)),
+        fix_base=bool(cfg.get("fix_base", True)),
+        root_link_name=cfg.get("root_link_name"),
+        link_density=float(cfg.get("link_density", 0.0)),
+        merge_fixed_joints=bool(cfg.get("merge_fixed_joints", True)),
+        convert_mimic_joints_to_normal_joints=bool(cfg.get("convert_mimic_joints_to_normal_joints", False)),
+        joint_drive=UrdfConverterCfg.JointDriveCfg(
+            drive_type=joint_drive_cfg.get("drive_type", "force"),
+            target_type=joint_drive_cfg.get("target_type", "position"),
+            gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
+                stiffness=gains_cfg.get("stiffness", 100.0),
+                damping=gains_cfg.get("damping", 1.0),
+            ),
         ),
-        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
-            solver_position_iteration_count=8,
-            solver_velocity_iteration_count=0
+        collider_type=cfg.get("collider_type", "convex_hull"),
+        self_collision=bool(cfg.get("self_collision", False)),
+        replace_cylinders_with_capsules=bool(cfg.get("replace_cylinders_with_capsules", False)),
+        collision_from_visuals=bool(cfg.get("collision_from_visuals", False)),
+    )
+    UrdfConverter(converter_cfg)
+
+    if not usd_path.exists():
+        raise RuntimeError(f"URDF conversion did not create {usd_path}.")
+
+
+def build_piper_arm_cfg(usd_path: Path) -> ArticulationCfg:
+    # Joint names from URDF: fl_joint1-6 (revolute), fl_joint7-8 (prismatic gripper)
+    return ArticulationCfg(
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=str(usd_path.resolve()),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+            ),
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                enabled_self_collisions=False,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=0,
+            ),
         ),
-    ),
-    init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.0),
-        rot=(1.0, 0.0, 0.0, 0.0),
-    ),
-    actuators={
-        "arm_joints": ImplicitActuatorCfg(
-            joint_names_expr=["fl_joint[1-6]"],
-            effort_limit_sim=100.0,
-            velocity_limit_sim=3.0,
-            stiffness=10000.0,
-            damping=100.0,
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=(0.0, 0.0, 0.0),
+            rot=(1.0, 0.0, 0.0, 0.0),
         ),
-        "gripper_joints": ImplicitActuatorCfg(
-            joint_names_expr=["fl_joint[7-8]"],
-            effort_limit_sim=10.0,
-            velocity_limit_sim=1.0,
-            stiffness=500.0,
-            damping=50.0,
-        ),
-    },
-)
+        actuators={
+            "arm_joints": ImplicitActuatorCfg(
+                joint_names_expr=["fl_joint[1-6]"],
+                effort_limit_sim=100.0,
+                velocity_limit_sim=3.0,
+                stiffness=10000.0,
+                damping=100.0,
+            ),
+            "gripper_joints": ImplicitActuatorCfg(
+                joint_names_expr=["fl_joint[7-8]"],
+                effort_limit_sim=10.0,
+                velocity_limit_sim=1.0,
+                stiffness=500.0,
+                damping=50.0,
+            ),
+        },
+    )
 
 
 def main():
     """Main test execution."""
 
-    print("\n" + "="*80)
-    print("Piper Arm Articulation Test")
-    print("="*80)
+    global REPORT_WRITER
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    report_path = REPORTS_DIR / f"test_piper_arm_report_{timestamp}.md"
+    REPORT_WRITER = ReportWriter(report_path)
+
+    log(f"[INFO] Report path: {report_path}")
+    log(f"[INFO] Start time (UTC): {timestamp}")
+    log(f"[INFO] Command: {' '.join(sys.argv)}")
+
+    log("\n" + "="*80)
+    log("Piper Arm Articulation Test")
+    log("="*80)
+
+    urdf_path, usd_path, cfg = resolve_piper_paths()
+    ensure_piper_usd(urdf_path, usd_path, cfg)
+    log(f"[INFO] Using Piper USD: {usd_path}")
+    piper_arm_cfg = build_piper_arm_cfg(usd_path)
 
     with build_simulation_context(
         device="cuda:0",
         auto_add_lighting=True,
         add_ground_plane=True
     ) as sim:
+        log(f"[INFO] Simulation device: {sim.device}")
+        log(f"[INFO] Simulation dt: {sim.cfg.dt}")
         # Create environment prim
-        sim_utils.create_prim(f"/World/Env_0", "Xform", translation=(0.0, 0.0, 0.0))
+        prim_utils.create_prim(f"/World/Env_0", "Xform", translation=(0.0, 0.0, 0.0))
 
         # Create articulation
-        print("\n[INFO] Spawning Piper arm articulation...")
-        arm = Articulation(PIPER_ARM_CFG.replace(prim_path="/World/Env_0/Robot"))
+        log("\n[INFO] Spawning Piper arm articulation...")
+        arm = Articulation(piper_arm_cfg.replace(prim_path="/World/Env_0/Robot"))
 
         # Initialize simulation
-        print("[INFO] Initializing simulation...")
+        log("[INFO] Initializing simulation...")
         sim.reset()
 
         # Verify initialization
-        print("\n" + "-"*80)
-        print("VERIFICATION: Initialization")
-        print("-"*80)
+        log("\n" + "-"*80)
+        log("VERIFICATION: Initialization")
+        log("-"*80)
 
         success = True
 
         # Check if articulation is initialized
         if not arm.is_initialized:
-            print("[FAIL] Articulation not initialized!")
+            log("[FAIL] Articulation not initialized!")
             success = False
         else:
-            print("[PASS] Articulation initialized successfully")
+            log("[PASS] Articulation initialized successfully")
 
         # Check if fixed base
         if not arm.is_fixed_base:
-            print("[FAIL] Expected fixed base but articulation is floating!")
+            log("[FAIL] Expected fixed base but articulation is floating!")
             success = False
         else:
-            print("[PASS] Base is fixed")
+            log("[PASS] Base is fixed")
 
         # Check buffer shapes
-        print(f"\n[INFO] Number of articulations: {arm.num_instances}")
-        print(f"[INFO] Number of joints: {arm.num_joints}")
+        log(f"\n[INFO] Number of articulations: {arm.num_instances}")
+        log(f"[INFO] Number of joints: {arm.num_joints}")
 
         if arm.num_instances != 1:
-            print(f"[FAIL] Expected 1 articulation, got {arm.num_instances}")
+            log(f"[FAIL] Expected 1 articulation, got {arm.num_instances}")
             success = False
 
         if arm.num_joints != 8:
-            print(f"[FAIL] Expected 8 joints, got {arm.num_joints}")
+            log(f"[FAIL] Expected 8 joints, got {arm.num_joints}")
             success = False
         else:
-            print("[PASS] Found expected 8 joints (6 arm + 2 gripper)")
+            log("[PASS] Found expected 8 joints (6 arm + 2 gripper)")
 
         # Check joint names
-        print(f"\n[INFO] Joint names: {list(arm.data.joint_names)}")
+        log(f"\n[INFO] Joint names: {list(arm.data.joint_names)}")
         expected_joints = [
             "fl_joint1", "fl_joint2", "fl_joint3", "fl_joint4",
             "fl_joint5", "fl_joint6", "fl_joint7", "fl_joint8"
@@ -130,29 +252,29 @@ def main():
         actual_joints = list(arm.data.joint_names)
 
         if actual_joints == expected_joints:
-            print("[PASS] All expected joints present")
+            log("[PASS] All expected joints present")
         else:
-            print("[FAIL] Joint names don't match URDF!")
-            print(f"  Expected: {expected_joints}")
-            print(f"  Actual: {actual_joints}")
+            log("[FAIL] Joint names don't match URDF!")
+            log(f"  Expected: {expected_joints}")
+            log(f"  Actual: {actual_joints}")
             success = False
 
         # Check for NaN values in initial state
         if torch.isnan(arm.data.root_pos_w).any():
-            print("[FAIL] NaN values found in root position!")
+            log("[FAIL] NaN values found in root position!")
             success = False
         else:
-            print("[PASS] No NaN in root position")
+            log("[PASS] No NaN in root position")
 
         if torch.isnan(arm.data.joint_pos).any():
-            print("[FAIL] NaN values found in joint positions!")
+            log("[FAIL] NaN values found in joint positions!")
             success = False
         else:
-            print("[PASS] No NaN in joint positions")
+            log("[PASS] No NaN in joint positions")
 
-        print("\n" + "-"*80)
-        print("VERIFICATION: Joint Limits")
-        print("-"*80)
+        log("\n" + "-"*80)
+        log("VERIFICATION: Joint Limits")
+        log("-"*80)
 
         expected_limits = {
             "fl_joint1": (-2.618, 2.618),
@@ -168,20 +290,20 @@ def main():
         for i, joint_name in enumerate(actual_joints):
             if joint_name in expected_limits:
                 lower, upper = expected_limits[joint_name]
-                print(f"  {joint_name}: [{lower:.3f}, {upper:.3f}] - Expected")
+                log(f"  {joint_name}: [{lower:.3f}, {upper:.3f}] - Expected")
             else:
-                print(f"  {joint_name}: Unknown limits")
+                log(f"  {joint_name}: Unknown limits")
 
-        print("\n" + "-"*80)
-        print("VERIFICATION: Physics Stability (5 seconds)")
-        print("-"*80)
+        log("\n" + "-"*80)
+        log("VERIFICATION: Physics Stability (5 seconds)")
+        log("-"*80)
 
         initial_z = arm.data.root_pos_w[0, 2].item()
-        print(f"\n[INFO] Initial Z position: {initial_z:.4f} m")
+        log(f"\n[INFO] Initial Z position: {initial_z:.4f} m")
 
         # Simulate for 5 seconds
         sim_steps = int(5.0 / sim.cfg.dt)
-        print(f"[INFO] Simulating for {sim_steps} steps ({5.0} seconds)...")
+        log(f"[INFO] Simulating for {sim_steps} steps ({5.0} seconds)...")
 
         nan_detected = False
         max_z_drift = 0.0
@@ -192,7 +314,7 @@ def main():
 
             # Check for NaN values
             if torch.isnan(arm.data.root_pos_w).any() or torch.isnan(arm.data.joint_pos).any():
-                print(f"\n[FAIL] NaN values detected at step {step}!")
+                log(f"\n[FAIL] NaN values detected at step {step}!")
                 nan_detected = True
                 success = False
                 break
@@ -204,23 +326,23 @@ def main():
                 max_z_drift = z_drift
 
             if step % (sim_steps // 5) == 0:
-                print(f"  Step {step}/{sim_steps}: Z={current_z:.4f} m, drift={z_drift:.4f} m")
+                log(f"  Step {step}/{sim_steps}: Z={current_z:.4f} m, drift={z_drift:.4f} m")
 
         if not nan_detected:
-            print(f"\n[INFO] Max Z position drift: {max_z_drift:.4f} m")
+            log(f"\n[INFO] Max Z position drift: {max_z_drift:.4f} m")
 
             if max_z_drift < 0.01:
-                print("[PASS] Arm remained stable (drift < 1cm)")
+                log("[PASS] Arm remained stable (drift < 1cm)")
             else:
-                print(f"[WARNING] Arm drifted {max_z_drift*100:.2f} cm - may indicate fixed base issue")
+                log(f"[WARNING] Arm drifted {max_z_drift*100:.2f} cm - may indicate fixed base issue")
                 # Don't fail on this, could be minor physics settling
 
-        print("\n" + "-"*80)
-        print("VERIFICATION: Joint Actuation")
-        print("-"*80)
+        log("\n" + "-"*80)
+        log("VERIFICATION: Joint Actuation")
+        log("-"*80)
 
         # Test joint actuation by moving each joint to mid-range
-        print("\n[INFO] Testing joint actuation...")
+        log("\n[INFO] Testing joint actuation...")
 
         joint_actions = {
             "fl_joint1": 0.0,
@@ -250,7 +372,7 @@ def main():
 
         # Verify joints moved
         final_joint_pos = arm.data.joint_pos[0].cpu().numpy()
-        print("\n[INFO] Joint positions after action:")
+        log("\n[INFO] Joint positions after action:")
 
         for i, (name, target_pos) in enumerate(joint_actions.items()):
             if name in actual_joints:
@@ -258,17 +380,17 @@ def main():
                 actual_pos = final_joint_pos[idx]
                 error = abs(actual_pos - target_pos)
                 status = "[PASS]" if error < 0.1 else "[FAIL]"
-                print(f"  {name}: {actual_pos:.3f} rad (target: {target_pos:.3f}) err={error:.3f} {status}")
+                log(f"  {name}: {actual_pos:.3f} rad (target: {target_pos:.3f}) err={error:.3f} {status}")
 
                 if error >= 0.1:
                     success = False
 
-        print("\n" + "="*80)
+        log("\n" + "="*80)
         if success:
-            print("OVERALL RESULT: PASS")
+            log("OVERALL RESULT: PASS")
         else:
-            print("OVERALL RESULT: FAIL")
-        print("="*80 + "\n")
+            log("OVERALL RESULT: FAIL")
+        log("="*80 + "\n")
 
         return success
 
@@ -278,10 +400,11 @@ if __name__ == "__main__":
         success = main()
         exit(0 if success else 1)
     except Exception as e:
-        print(f"\n[ERROR] Exception occurred: {e}")
-        import traceback
-        traceback.print_exc()
-        simulation_app.close()
+        log(f"\n[ERROR] Exception occurred: {e}")
+        for line in traceback.format_exc().splitlines():
+            log(line)
         exit(1)
     finally:
+        if REPORT_WRITER is not None:
+            REPORT_WRITER.write()
         simulation_app.close()

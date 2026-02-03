@@ -72,15 +72,15 @@ flowchart LR
 
 **Implementation Steps**
 
-- **Step 1.1**: Test Piper Arm (`scripts/test_piper_arm.py`)
-  - Verify 7-DoF arm (6 revolute + 2 prismatic gripper) loads correctly
-  - Check all joints actuate within URDF limits, verify physics stability for 5+ seconds
-  - Use Isaac Lab `Articulation` + `ArticulationCfg`, run headless
+- **Step 1.1**: Piper Arm Validation (`scripts/test_piper_arm.py`)
+  - Headless `Articulation` spawn confirmed: fixed base, 8 joints, names match URDF
+  - No NaNs in state, stable over 5s (0 drift), joint actuation hit targets within tolerance
+  - Result: **PASS** (latest report: `projects/shelf_sim/reports/test_piper_arm_report_20260203_031429.md`)
 
 - **Step 1.2**: Test All 8 USD Items (`scripts/test_assets.py`)
-  - Test: Boxed (4: blue_tin, salt_box, oil_tin, mustard_jar), Candles (2: Medium_Fat, TallThin), Containers (2: TinCan, MasonJar)
-  - Verify collision/visual meshes load, mass < 1.0 kg, stable physics after drop from 0.5m
-  - Use Isaac Lab `RigidObject` + `RigidObjectCfg`, report pass/fail table
+  - Drop each asset into a kinematic bin on a table (headless) to validate collisions and stability
+  - Checks: asset spawns, falls, settles (low velocity), and remains inside the bin bounds
+  - Writes a concise pass/fail report under `projects/shelf_sim/reports/`
 
 - **Step 1.3**: Combined Scene Test (`scripts/test_scene.py`)
   - Spawn Piper arm + ground plane + dome light + 1 item (e.g., salt_box.usd)
