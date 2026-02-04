@@ -47,8 +47,6 @@ flowchart LR
 
 **Actions**
 - Start with Omniverse USD asset packs that include shelves, bins, and food items.
-  - Recommended packs: Commercial Assets, Industrial Assets, Residential Assets, SimReady Furniture & Misc.
-  - These are hosted as USD bundles and integrate directly in Isaac Lab.
 - Use Nucleus paths when possible:
   - Isaac Lab exposes `ISAACLAB_NUCLEUS_DIR` for canonical asset paths on Nucleus.
   - Assets can be pulled from Nucleus and cached locally by Isaac Lab utilities.
@@ -95,7 +93,10 @@ flowchart LR
   - Create `config/assets.yaml` to override mass/collision for assets that failed Step 1.2
   - Use `sim_utils.MassPropertiesCfg` and `sim_utils.CollisionPropertiesCfg`
 
-**Execution Order**: `test_piper_arm.py` → `test_assets.py` → `test_scene.py` → Step 1.4 (only if needed)
+### Visual Notes (Current Runs)
+- MasonJar: glass container not visible in renders (lid visible), but physics behaves as if present.
+- Candles: TallThin and Medium_Fat are not visible; only faint shadow in some views.
+- Piper arm: present but static in `test_scene.py` and appears untextured gray.
 
 ---
 
@@ -241,9 +242,3 @@ flowchart LR
 - Headless is recommended for large-scale dataset generation.
 - Datasets can be large; store outside repo if needed.
 
----
-
-## Visual Notes (Current Runs)
-- MasonJar: glass container not visible in renders (lid visible), but physics behaves as if present.
-- Candles: TallThin and Medium_Fat are not visible; only faint shadow in some views.
-- Piper arm: present but static in `test_scene.py` and appears untextured gray.

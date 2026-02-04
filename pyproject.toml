@@ -1,0 +1,12 @@
+[tool.pyright]
+venvPath = "/opt"
+venv = "isaaclab-env"
+extraPaths = [
+  "/opt/isaaclab-env/lib/python3.11/site-packages",
+  "/opt/IsaacLab",
+  "/opt/IsaacLab/source/isaaclab",
+  "/opt/IsaacLab/source/isaaclab_assets",
+  "/opt/IsaacLab/source/isaaclab_mimic",
+  "/opt/IsaacLab/source/isaaclab_rl",
+  "/opt/IsaacLab/source/isaaclab_tasks",
+]

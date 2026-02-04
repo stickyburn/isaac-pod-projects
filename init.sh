@@ -7,7 +7,7 @@ PROJECT_SOURCE="${REPO_ROOT}/projects/shelf_sim/source/shelf_sim"
 # Configurable constants (edit here when needed).
 ASSETS_DIR="/workspace/assets"
 DOWNLOADS_DIR="${ASSETS_DIR}/downloads"
-ASSETS_ZIP_URL="https://drive.google.com/uc?id=1DUWPnqCruQXxZjulxBN8S2k_O94TwoIu"
+ASSETS_ZIP_URL="https://drive.google.com/uc?id=1YpceX3N2YkSs1nzRP5Z8wal-l24wh0Cp"
 ASSETS_ZIP_NAME="shelf_sim_assets.zip"
 
 echo "Repo root: ${REPO_ROOT}"
