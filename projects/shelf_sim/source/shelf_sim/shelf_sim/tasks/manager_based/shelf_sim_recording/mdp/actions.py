@@ -14,10 +14,11 @@ from dataclasses import MISSING
 from typing import TYPE_CHECKING
 
 import torch
-from isaaclab.controllers.differential_ik import DifferentialIKController, DifferentialIKControllerCfg
-from isaaclab.managers import ActionTerm, ActionTermCfg, SceneEntityCfg
+from isaaclab.controllers.differential_ik import DifferentialIKController
+from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
+from isaaclab.managers import ActionTerm, ActionTermCfg
+import isaaclab.utils.math as math_utils
 from isaaclab.utils import configclass
-from isaaclab.utils.math import combine_frame_transforms, quat_from_euler_xyz
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -38,23 +39,54 @@ class EndEffectorPoseDeltaAction(ActionTerm):
     cfg: "EndEffectorPoseDeltaActionCfg"
     _asset: "Articulation"
     _body_id: int
+    _body_name: str
+    _joint_ids: list[int] | slice
+    _joint_names: list[str]
+    _num_joints: int
+    _jacobi_body_idx: int
+    _jacobi_joint_ids: list[int] | slice
     _controller: DifferentialIKController
     _scale: torch.Tensor
+    _raw_actions: torch.Tensor
+    _processed_actions: torch.Tensor
 
     def __init__(self, cfg: "EndEffectorPoseDeltaActionCfg", env: "ManagerBasedRLEnv") -> None:
         super().__init__(cfg, env)
-        
+
         # Resolve asset
         self._asset = self._env.scene[cfg.asset_name]
-        
+
+        # Resolve joints over which IK is applied
+        self._joint_ids, self._joint_names = self._asset.find_joints(cfg.joint_names)
+        self._num_joints = len(self._joint_ids)
+        if self._num_joints == self._asset.num_joints:
+            self._joint_ids = slice(None)
+
         # Get body ID for the end-effector
-        self._body_id = self._asset.find_bodies(cfg.body_name)[0][0]
-        
+        body_ids, body_names = self._asset.find_bodies(cfg.body_name)
+        if len(body_ids) != 1:
+            raise ValueError(
+                f"Expected one match for body name '{cfg.body_name}'. Found {len(body_ids)}: {body_names}."
+            )
+        self._body_id = body_ids[0]
+        self._body_name = body_names[0]
+
+        # Resolve jacobian indices
+        if self._asset.is_fixed_base:
+            self._jacobi_body_idx = self._body_id - 1
+            self._jacobi_joint_ids = self._joint_ids
+        else:
+            self._jacobi_body_idx = self._body_id
+            if isinstance(self._joint_ids, slice):
+                self._jacobi_joint_ids = slice(6, None)
+            else:
+                self._jacobi_joint_ids = [i + 6 for i in self._joint_ids]
+
         # Create IK controller
         ik_cfg = DifferentialIKControllerCfg(
             command_type="pose",
             ik_method="dls",
-            position_offset=None,
+            use_relative_mode=False,
         )
         self._controller = DifferentialIKController(
             cfg=ik_cfg,
@@ -67,14 +99,36 @@ class EndEffectorPoseDeltaAction(ActionTerm):
             [cfg.position_scale, cfg.position_scale, cfg.position_scale,
              cfg.rotation_scale, cfg.rotation_scale, cfg.rotation_scale, cfg.rotation_scale],
             device=self.device,
-        ).unsqueeze(0)
+        ).repeat(self.num_envs, 1)
+
+        # Create buffers for actions
+        self._raw_actions = torch.zeros(self.num_envs, self.action_dim, device=self.device)
+        self._processed_actions = torch.zeros_like(self._raw_actions)
 
     def reset(self, env_ids: torch.Tensor | None = None) -> None:
         self._controller.reset(env_ids)
+        if env_ids is None:
+            self._raw_actions.zero_()
+        else:
+            self._raw_actions[env_ids] = 0.0
+
+    @property
+    def action_dim(self) -> int:
+        return self._controller.action_dim
+
+    @property
+    def raw_actions(self) -> torch.Tensor:
+        return self._raw_actions
+
+    @property
+    def processed_actions(self) -> torch.Tensor:
+        return self._processed_actions
 
     def process_actions(self, actions: torch.Tensor) -> None:
+        # Store raw actions
+        self._raw_actions[:] = actions
         # Scale actions
-        self._processed_actions = actions * self._scale
+        self._processed_actions[:] = self._raw_actions * self._scale
 
     def apply_actions(self) -> None:
         # Get current EEF pose
@@ -82,7 +136,7 @@ class EndEffectorPoseDeltaAction(ActionTerm):
         ee_quat_w = self._asset.data.body_quat_w[:, self._body_id]
         
         # Get current joint positions
-        joint_pos = self._asset.data.joint_pos
+        joint_pos = self._asset.data.joint_pos[:, self._joint_ids]
         
         # Compute target EEF pose from delta action
         # Position: current + delta
@@ -91,29 +145,20 @@ class EndEffectorPoseDeltaAction(ActionTerm):
         # Orientation: apply delta quaternion to current
         delta_quat = self._processed_actions[:, 3:7]
         delta_quat = delta_quat / (torch.norm(delta_quat, dim=-1, keepdim=True) + 1e-8)
-        target_quat = self._quat_multiply(ee_quat_w, delta_quat)
+        target_quat = math_utils.quat_mul(ee_quat_w, delta_quat)
         
         # Stack pose command
         target_pose = torch.cat([target_pos, target_quat], dim=-1)
-        
-        # Compute joint targets using IK
-        joint_targets = self._controller.compute(target_pose, joint_pos, self._body_id)
-        
-        # Apply to robot (only arm joints, not gripper)
-        self._asset.set_joint_position_target(joint_targets)
 
-    @staticmethod
-    def _quat_multiply(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
-        """Multiply two quaternions."""
-        w1, x1, y1, z1 = q1[:, 3], q1[:, 0], q1[:, 1], q1[:, 2]
-        w2, x2, y2, z2 = q2[:, 3], q2[:, 0], q2[:, 1], q2[:, 2]
-        
-        w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-        x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-        y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
-        z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
-        
-        return torch.stack([x, y, z, w], dim=-1)
+        # Set desired pose on controller
+        self._controller.set_command(target_pose)
+
+        # Compute joint targets using IK
+        jacobian = self._asset.root_physx_view.get_jacobians()[:, self._jacobi_body_idx, :, self._jacobi_joint_ids]
+        joint_targets = self._controller.compute(ee_pos_w, ee_quat_w, jacobian, joint_pos)
+
+        # Apply to robot (only arm joints)
+        self._asset.set_joint_position_target(joint_targets, joint_ids=self._joint_ids)
 
 
 @configclass
@@ -125,6 +170,9 @@ class EndEffectorPoseDeltaActionCfg(ActionTermCfg):
     asset_name: str = MISSING
     """Name of the robot asset."""
     
+    joint_names: list[str] = MISSING
+    """Names of the arm joints used for IK."""
+
     body_name: str = MISSING
     """Name of the end-effector body."""
     
@@ -148,14 +196,31 @@ class GripperAction(ActionTerm):
     cfg: "GripperActionCfg"
     _asset: "Articulation"
     _joint_ids: list[int]
+    _raw_actions: torch.Tensor
+    _processed_actions: torch.Tensor
 
     def __init__(self, cfg: "GripperActionCfg", env: "ManagerBasedRLEnv") -> None:
         super().__init__(cfg, env)
         
         self._asset = self._env.scene[cfg.asset_name]
         self._joint_ids, _ = self._asset.find_joints(cfg.joint_names)
+        self._raw_actions = torch.zeros(self.num_envs, 1, device=self.device)
+        self._processed_actions = torch.zeros(self.num_envs, len(self._joint_ids), device=self.device)
+
+    @property
+    def action_dim(self) -> int:
+        return 1
+
+    @property
+    def raw_actions(self) -> torch.Tensor:
+        return self._raw_actions
+
+    @property
+    def processed_actions(self) -> torch.Tensor:
+        return self._processed_actions
 
     def process_actions(self, actions: torch.Tensor) -> None:
+        self._raw_actions[:] = actions
         # Binary gripper control: positive = open, negative = close
         gripper_cmd = actions[:, 0]
         

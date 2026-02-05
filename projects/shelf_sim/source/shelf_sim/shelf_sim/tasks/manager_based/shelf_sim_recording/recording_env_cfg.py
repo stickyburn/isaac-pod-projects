@@ -19,14 +19,11 @@ Session Types:
 - F: Target item offset in bin (not center)
 """
 
-import math
-from dataclasses import MISSING
 from pathlib import Path
-from typing import Literal
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -37,7 +34,6 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import CameraCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
 
@@ -45,9 +41,9 @@ from . import mdp
 # Paths and constants
 ##
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
+REPO_ROOT = Path(__file__).resolve().parents[8]
+DEFAULT_MANIFEST = REPO_ROOT / "projects/shelf_sim/assets_manifest.json"
 DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usd"
-ASSETS_MANIFEST = REPO_ROOT / "projects/shelf_sim/assets_manifest.json"
 
 ROBOT_BASE_POS = (-0.8, 0.0, 0.0)
 ROBOT_BASE_ROT = (1.0, 0.0, 0.0, 0.0)
@@ -105,7 +101,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.15, 0.15, 0.15)),
-            translation=(0.0, 0.0, TABLE_TOP_Z_M - TABLE_SIZE_M[2] / 2.0),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.0, 0.0, TABLE_TOP_Z_M - TABLE_SIZE_M[2] / 2.0),
         ),
     )
 
@@ -119,7 +117,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.08, 0.12, 0.2)),
-            translation=(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M / 2.0),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M / 2.0),
         ),
     )
     bin_wall_px = AssetBaseCfg(
@@ -129,8 +129,13 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.16, 0.28)),
-            translation=(BIN_INNER_SIZE_M[0] / 2.0 + BIN_WALL_THICKNESS_M / 2.0, 0.0, 
-                        TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(
+                BIN_INNER_SIZE_M[0] / 2.0 + BIN_WALL_THICKNESS_M / 2.0,
+                0.0,
+                TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0,
+            ),
         ),
     )
     bin_wall_nx = AssetBaseCfg(
@@ -140,8 +145,13 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.16, 0.28)),
-            translation=(-BIN_INNER_SIZE_M[0] / 2.0 - BIN_WALL_THICKNESS_M / 2.0, 0.0,
-                        TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(
+                -BIN_INNER_SIZE_M[0] / 2.0 - BIN_WALL_THICKNESS_M / 2.0,
+                0.0,
+                TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0,
+            ),
         ),
     )
     bin_wall_py = AssetBaseCfg(
@@ -151,8 +161,13 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.16, 0.28)),
-            translation=(0.0, BIN_INNER_SIZE_M[1] / 2.0 + BIN_WALL_THICKNESS_M / 2.0,
-                        TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(
+                0.0,
+                BIN_INNER_SIZE_M[1] / 2.0 + BIN_WALL_THICKNESS_M / 2.0,
+                TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0,
+            ),
         ),
     )
     bin_wall_ny = AssetBaseCfg(
@@ -162,8 +177,13 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.16, 0.28)),
-            translation=(0.0, -BIN_INNER_SIZE_M[1] / 2.0 - BIN_WALL_THICKNESS_M / 2.0,
-                        TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(
+                0.0,
+                -BIN_INNER_SIZE_M[1] / 2.0 - BIN_WALL_THICKNESS_M / 2.0,
+                TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + BIN_WALL_HEIGHT_M / 2.0,
+            ),
         ),
     )
 
@@ -175,7 +195,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.2, 0.2)),
-            translation=(0.45, 0.0, 0.45),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.45, 0.0, 0.45),
         ),
     )
     shelf_frame_right = AssetBaseCfg(
@@ -185,7 +207,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.2, 0.2)),
-            translation=(0.95, 0.0, 0.45),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.95, 0.0, 0.45),
         ),
     )
     shelf_back = AssetBaseCfg(
@@ -195,7 +219,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.2, 0.2)),
-            translation=(0.7, -0.29, 0.45),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.7, -0.29, 0.45),
         ),
     )
     shelf_bottom = AssetBaseCfg(
@@ -205,7 +231,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.18, 0.18, 0.18)),
-            translation=(0.7, 0.0, SHELF_POSITIONS["bottom"]),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.7, 0.0, SHELF_POSITIONS["bottom"]),
         ),
     )
     shelf_middle = AssetBaseCfg(
@@ -215,7 +243,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.18, 0.18, 0.18)),
-            translation=(0.7, 0.0, SHELF_POSITIONS["middle"]),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.7, 0.0, SHELF_POSITIONS["middle"]),
         ),
     )
     shelf_top = AssetBaseCfg(
@@ -225,7 +255,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.18, 0.18, 0.18)),
-            translation=(0.7, 0.0, SHELF_POSITIONS["top"]),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.7, 0.0, SHELF_POSITIONS["top"]),
         ),
     )
 
@@ -298,7 +330,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
                 diffuse_color=(0.0, 1.0, 0.0),
                 emissive_color=(0.0, 0.5, 0.0),
             ),
-            translation=(0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02),
         ),
     )
 
@@ -320,7 +354,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             color=(1.0, 0.95, 0.9),
             enable_color_temperature=True,
             color_temperature=5200,
-            translation=(1.4, -1.2, 2.0),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(1.4, -1.2, 2.0),
         ),
     )
     fill_light = AssetBaseCfg(
@@ -331,7 +367,9 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
             color=(0.85, 0.9, 1.0),
             enable_color_temperature=True,
             color_temperature=6500,
-            translation=(-1.2, 1.2, 1.6),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(-1.2, 1.2, 1.6),
         ),
     )
 
@@ -354,7 +392,8 @@ class ActionsCfg:
     # EEF delta pose action (will use IK controller)
     arm_action = mdp.EndEffectorPoseDeltaActionCfg(
         asset_name="robot",
-        body_name="gripper_center",  # EEF link name
+        joint_names=["fl_joint[1-6]"],
+        body_name="fl_link8",  # EEF link name
         position_scale=0.1,  # Max 10cm per step
         rotation_scale=0.1,  # Max rotation per step
     )
@@ -389,11 +428,11 @@ class ObservationsCfg:
         # EEF pose (position + quaternion)
         eef_pos = ObsTerm(
             func=mdp.body_pos,
-            params={"asset_cfg": SceneEntityCfg("robot", body_names=["gripper_center"])},
+            params={"asset_cfg": SceneEntityCfg("robot", body_names=["fl_link8"])},
         )
         eef_quat = ObsTerm(
             func=mdp.body_quat,
-            params={"asset_cfg": SceneEntityCfg("robot", body_names=["gripper_center"])},
+            params={"asset_cfg": SceneEntityCfg("robot", body_names=["fl_link8"])},
         )
         
         # Target slot pose
@@ -430,13 +469,10 @@ class EventCfg:
         },
     )
 
-    # Reset items in bin (will be overridden per session)
-    reset_bin_items = EventTerm(
-        func=mdp.reset_scene_objects,
+    # Reset scene objects to default state.
+    reset_scene = EventTerm(
+        func=mdp.reset_scene_to_default,
         mode="reset",
-        params={
-            "asset_cfg": SceneEntityCfg("items"),
-        },
     )
 
 
@@ -492,7 +528,7 @@ class TerminationsCfg:
     eef_out_of_bounds = DoneTerm(
         func=mdp.body_pos_out_of_bounds,
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=["gripper_center"]),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["fl_link8"]),
             "bounds": ((-1.5, 1.5), (-1.5, 1.5), (0.0, 2.0)),
         },
     )
