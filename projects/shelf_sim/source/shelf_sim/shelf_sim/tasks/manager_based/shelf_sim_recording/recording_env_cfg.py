@@ -148,7 +148,7 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
     target_indicator_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02)
 
     # Camera configuration
-    camera_prim_path: str = "/World/robot/fl_link/gripper_camera"
+    camera_prim_path: str = "/World/robot/gripper_camera"
     use_existing_camera: bool = True
 
     # Ground plane
@@ -685,9 +685,9 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
     target_indicator_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02)
 
     # Sensor + success configuration
-    camera_prim_path: str = "/World/robot/fl_link8/gripper_camera"
+    camera_prim_path: str = "/World/robot/gripper_camera"
     use_existing_camera: bool = True
-    eef_body_name: str = "fl_link"
+    eef_body_name: str = "fl_link8"
     gripper_joint_names: list[str] = field(default_factory=lambda: ["fl_joint7", "fl_joint8"])
     gripper_open_threshold: float = 0.02
     slot_tolerance_m: float = 0.05

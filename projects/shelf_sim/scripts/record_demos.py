@@ -17,7 +17,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--min_steps", type=int, default=10, help="Minimum steps to keep a demo.")
     parser.add_argument("--no_rgb", action="store_true", default=False, help="Disable recording RGB frames.")
     parser.add_argument("--disable_cameras", action="store_true", default=False, help="Disable camera sensors.")
-    parser.add_argument("--eef_body", type=str, default="fl_link", help="EEF body name for teleop.")
+    parser.add_argument("--eef_body", type=str, default="fl_link8", help="EEF body name for teleop.")
     parser.add_argument("--pos_step", type=float, default=0.02, help="EEF translation step (meters).")
     parser.add_argument("--rot_step", type=float, default=0.08, help="EEF rotation step (radians).")
     parser.add_argument("--fast_scale", type=float, default=3.0, help="Speed multiplier when holding Shift.")

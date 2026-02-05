@@ -1,0 +1,38 @@
+#usda 1.0
+(
+    defaultPrim = "piper_fl"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "piper_fl"
+{
+    def Camera "gripper_camera" (
+        prepend apiSchemas = ["IsaacSensorAPI"]
+    )
+    {
+        # Camera position relative to the gripper (fl_link8)
+        # Positioned 5cm in front of the gripper, pointing forward
+        float3 prim:localPos = (0.05, 0.0, 0.0)
+        
+        # Camera orientation: pointing forward (Z-axis)
+        float4 prim:localRot = (0.0, 0.0, 0.0, 1.0)
+        
+        # Camera intrinsics
+        float focalLength = 24.0
+        float focusDistance = 400.0
+        float horizontalAperture = 20.955
+        float verticalAperture = 15.656
+        float clippingRange = (0.1, 1000.0)
+        
+        # Resolution (will be set when used)
+        int64 width = 224
+        int64 height = 224
+        
+        # Sensor data types
+        token[] outputDataTypes = [
+            "rgba",
+            "depth"
+        ]
+    }
+}

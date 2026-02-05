@@ -50,7 +50,7 @@ class IKTeleopController(DeviceBase):
         self,
         env: "ManagerBasedRLEnv",
         robot_asset_name: str = "robot",
-        eef_body_name: str = "fl_link",
+        eef_body_name: str = "fl_link8",
         position_step: float = 0.02,
         rotation_step: float = 0.08,
         fast_scale: float = 3.0,
