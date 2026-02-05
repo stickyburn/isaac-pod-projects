@@ -93,11 +93,6 @@ flowchart LR
   - Create `config/assets.yaml` to override mass/collision for assets that failed Step 1.2
   - Use `sim_utils.MassPropertiesCfg` and `sim_utils.CollisionPropertiesCfg`
 
-### Visual Notes (Current Runs)
-- MasonJar: glass container not visible in renders (lid visible), but physics behaves as if present.
-- Candles: TallThin and Medium_Fat are not visible; only faint shadow in some views.
-- Piper arm: present but static in `test_scene.py` and appears untextured gray.
-
 ---
 
 ## Step 2: Scene Construction (Shelf + Table + Bin)

@@ -1,0 +1,148 @@
+# Shelf-Sim Recording Session Configurations
+# 
+# This file defines the fixed scene configurations for human demonstrations.
+# Each session type creates a consistent environment for recording demonstrations.
+#
+# Usage:
+#   - Select a session type before starting recording
+#   - Record 3-5 demonstrations per session type
+#   - Total: 15-30 demonstrations across all session types
+
+session_types:
+  # Session Type A: Single item in bin, empty middle shelf target
+  # Simplest case - single item, clear target
+  A:
+    name: "Single Item - Middle Shelf"
+    bin_items:
+      count: 1
+      types: ["blue_tin"]
+      positions:
+        - [0.0, 0.0, 0.0]  # Relative to bin center
+    target:
+      item: "blue_tin"
+      slot: "middle"
+      slot_position: [0.7, 0.0, 0.46]  # World coordinates
+    distractors: []
+    indicator:
+      position: [0.7, 0.0, 0.44]
+      color: [0.0, 1.0, 0.0]  # Green
+
+  # Session Type B: Two items in bin (target on top), empty middle shelf target
+  # Requires selecting the correct item from multiple options
+  B:
+    name: "Two Items - Middle Shelf"
+    bin_items:
+      count: 2
+      types: ["blue_tin", "mustard_jar"]
+      positions:
+        - [0.0, 0.0, 0.07]  # Target on top
+        - [0.05, 0.0, 0.0]  # Distractor below
+    target:
+      item: "blue_tin"
+      slot: "middle"
+      slot_position: [0.7, 0.0, 0.46]
+    distractors: []
+    indicator:
+      position: [0.7, 0.0, 0.44]
+      color: [0.0, 1.0, 0.0]
+
+  # Session Type C: Single item in bin, middle shelf has 1 distractor item
+  # Requires placing in a slot with existing items
+  C:
+    name: "Single Item - Middle Shelf with Distractor"
+    bin_items:
+      count: 1
+      types: ["blue_tin"]
+      positions:
+        - [0.0, 0.0, 0.0]
+    target:
+      item: "blue_tin"
+      slot: "middle"
+      slot_position: [0.7, 0.0, 0.46]
+    distractors:
+      - item: "salt_box"
+        position: [0.75, 0.15, 0.46]  # On shelf, not in target slot
+    indicator:
+      position: [0.7, 0.0, 0.44]
+      color: [0.0, 1.0, 0.0]
+
+  # Session Type D: Single item in bin, top shelf target
+  # Different height target requires arm to reach higher
+  D:
+    name: "Single Item - Top Shelf"
+    bin_items:
+      count: 1
+      types: ["blue_tin"]
+      positions:
+        - [0.0, 0.0, 0.0]
+    target:
+      item: "blue_tin"
+      slot: "top"
+      slot_position: [0.7, 0.0, 0.88]  # Higher shelf
+    distractors: []
+    indicator:
+      position: [0.7, 0.0, 0.86]
+      color: [0.0, 0.8, 0.8]  # Cyan
+
+  # Session Type E: Different item type
+  # Tests generalization across different object geometries
+  E:
+    name: "Mustard Jar - Middle Shelf"
+    bin_items:
+      count: 1
+      types: ["mustard_jar"]
+      positions:
+        - [0.0, 0.0, 0.0]
+    target:
+      item: "mustard_jar"
+      slot: "middle"
+      slot_position: [0.7, 0.0, 0.46]
+    distractors: []
+    indicator:
+      position: [0.7, 0.0, 0.44]
+      color: [1.0, 1.0, 0.0]  # Yellow
+
+  # Session Type F: Target item offset in bin
+  # Item not at bin center requires reaching to different location
+  F:
+    name: "Offset Item - Middle Shelf"
+    bin_items:
+      count: 1
+      types: ["blue_tin"]
+      positions:
+        - [0.1, -0.08, 0.0]  # Offset from center
+    target:
+      item: "blue_tin"
+      slot: "middle"
+      slot_position: [0.7, 0.0, 0.46]
+    distractors: []
+    indicator:
+      position: [0.7, 0.0, 0.44]
+      color: [0.0, 1.0, 0.0]
+
+# Asset mapping from names to USD paths
+asset_paths:
+  blue_tin: "/workspace/assets/Boxed/blue_tin.usd"
+  mustard_jar: "/workspace/assets/Boxed/mustard_jar.usd"
+  oil_tin: "/workspace/assets/Boxed/oil_tin.usd"
+  salt_box: "/workspace/assets/Boxed/salt_box.usd"
+  tin_can: "/workspace/assets/Containers/TinCan.usd"
+
+# Recording parameters
+recording:
+  episode_length_s: 30
+  success_timeout_s: 30
+  min_grasp_height_m: 0.8
+  slot_tolerance_m: 0.05
+  stable_velocity_threshold_m_s: 0.02
+
+# Visualization
+visualization:
+  target_indicator:
+    radius: 0.03
+    height: 0.01
+    emissive_intensity: 2.0
+  camera:
+    resolution: [224, 224]
+    position: [1.3, -1.2, 1.2]
+    target: [0.0, 0.0, 0.8]

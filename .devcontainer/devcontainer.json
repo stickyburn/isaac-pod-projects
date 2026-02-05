@@ -9,7 +9,26 @@
   "customizations": {
     "vscode": {
       "settings": {
-        "python.defaultInterpreterPath": "/opt/isaaclab-env/bin/python"
+        "python.defaultInterpreterPath": "/opt/isaaclab-env/bin/python",
+        "python.analysis.autoImportCompletions": false,
+        "python.analysis.diagnosticMode": "workspace",
+        "python.analysis.exclude": [
+          "**/site-packages",
+          "/opt/IsaacLab"
+        ],
+        "python.analysis.inlayHints.functionReturnTypes": false,
+        "python.analysis.inlayHints.variableTypes": false,
+        "python.analysis.typeCheckingMode": "basic",
+        "python.analysis.logLevel": "Error",
+        "python.analysis.extraPaths": [
+          "/opt/IsaacLab/source/isaaclab",
+          "/opt/IsaacLab/source/isaaclab_assets",
+          "/opt/IsaacLab/source/isaaclab_mimic",
+          "/opt/IsaacLab/source/isaaclab_rl",
+          "/opt/IsaacLab/source/isaaclab_tasks"
+        ],
+        "pylance.enableExperimentalFeatures": false,
+        "python.analysis.disableOrganizeImports": true
       },
       "extensions": [
         "ms-python.python",
