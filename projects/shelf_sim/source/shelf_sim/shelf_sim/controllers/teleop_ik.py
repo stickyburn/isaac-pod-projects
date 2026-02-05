@@ -11,8 +11,13 @@ Controls:
 - WASD: XY plane movement
 - Q/E: Z axis (up/down)
 - Arrow keys: Rotation around axes
+- Z/C: Yaw rotation
+- Shift: Fast movement
+- Ctrl: Fine movement
 - Space: Toggle gripper (open/close)
 - R: Reset to home position
+- P/Enter: Mark success (for recording)
+- O/Backspace: Mark failure (for recording)
 - ESC: Exit
 """
 
@@ -45,9 +50,11 @@ class IKTeleopController(DeviceBase):
         self,
         env: "ManagerBasedRLEnv",
         robot_asset_name: str = "robot",
-        eef_body_name: str = "gripper_center",
-        position_step: float = 0.01,
-        rotation_step: float = 0.05,
+        eef_body_name: str = "fl_link",
+        position_step: float = 0.02,
+        rotation_step: float = 0.08,
+        fast_scale: float = 3.0,
+        slow_scale: float = 0.3,
     ):
         super().__init__()
         
@@ -56,6 +63,8 @@ class IKTeleopController(DeviceBase):
         self.eef_body_name = eef_body_name
         self.position_step = position_step
         self.rotation_step = rotation_step
+        self.fast_scale = fast_scale
+        self.slow_scale = slow_scale
         
         # Get robot asset
         self.robot = env.scene[robot_asset_name]
@@ -85,6 +94,8 @@ class IKTeleopController(DeviceBase):
             'w': False, 'a': False, 's': False, 'd': False,
             'q': False, 'e': False,
             'up': False, 'down': False, 'left': False, 'right': False,
+            'z': False, 'c': False,
+            'shift': False, 'ctrl': False,
         }
         
         # Initialize target pose
@@ -131,23 +142,31 @@ class IKTeleopController(DeviceBase):
             - arm_action: Tensor of shape (num_envs, 7) with [dx, dy, dz, dqx, dqy, dqz, dqw]
             - gripper_action: Tensor of shape (num_envs, 1) with gripper command
         """
+        # Compute speed scaling from modifiers
+        if self._key_state['shift']:
+            scale = self.fast_scale
+        elif self._key_state['ctrl']:
+            scale = self.slow_scale
+        else:
+            scale = 1.0
+
         # Compute delta position from key state
         dx = 0.0
         dy = 0.0
         dz = 0.0
         
         if self._key_state['w']:
-            dy += self.position_step  # Forward
+            dy += self.position_step * scale  # Forward
         if self._key_state['s']:
-            dy -= self.position_step  # Backward
+            dy -= self.position_step * scale  # Backward
         if self._key_state['a']:
-            dx -= self.position_step  # Left
+            dx -= self.position_step * scale  # Left
         if self._key_state['d']:
-            dx += self.position_step  # Right
+            dx += self.position_step * scale  # Right
         if self._key_state['q']:
-            dz += self.position_step  # Up
+            dz += self.position_step * scale  # Up
         if self._key_state['e']:
-            dz -= self.position_step  # Down
+            dz -= self.position_step * scale  # Down
         
         # Compute delta rotation from key state (simplified as Euler angles)
         drx = 0.0
@@ -155,13 +174,17 @@ class IKTeleopController(DeviceBase):
         drz = 0.0
         
         if self._key_state['up']:
-            drx += self.rotation_step
+            drx += self.rotation_step * scale
         if self._key_state['down']:
-            drx -= self.rotation_step
+            drx -= self.rotation_step * scale
         if self._key_state['left']:
-            dry += self.rotation_step
+            dry += self.rotation_step * scale
         if self._key_state['right']:
-            dry -= self.rotation_step
+            dry -= self.rotation_step * scale
+        if self._key_state['z']:
+            drz += self.rotation_step * scale
+        if self._key_state['c']:
+            drz -= self.rotation_step * scale
         
         # Update target pose
         self._target_pos[:, 0] += dx
@@ -234,6 +257,11 @@ class KeyboardTeleopInterface:
     def __init__(self, controller: IKTeleopController):
         self.controller = controller
         self._running = False
+        self._keyboard_sub = None
+        self.should_quit = False
+        self.should_reset = False
+        self.mark_success = False
+        self.mark_failure = False
 
     def start(self):
         """Start keyboard listening."""
@@ -244,35 +272,58 @@ class KeyboardTeleopInterface:
             input_interface = app_window.get_keyboard()
             
             # Subscribe to keyboard events
-            input_interface.subscribe_to_key_event(
-                self._on_key_event
-            )
+            self._keyboard_sub = input_interface.subscribe_to_key_event(self._on_key_event)
         except ImportError:
             print("Warning: Could not setup keyboard interface in headless mode")
 
     def stop(self):
         """Stop keyboard listening."""
         self._running = False
+        self._keyboard_sub = None
+
+    def consume_flags(self) -> tuple[bool, bool, bool, bool]:
+        """Consume one-shot control flags (quit/reset/success/failure)."""
+        flags = (self.should_quit, self.should_reset, self.mark_success, self.mark_failure)
+        self.should_reset = False
+        self.mark_success = False
+        self.mark_failure = False
+        return flags
 
     def _on_key_event(self, event):
         """Handle keyboard event."""
         if not self._running:
             return
-        
+
+        import omni.appwindow
+
         key_map = {
             'W': 'w', 'A': 'a', 'S': 's', 'D': 'd',
             'Q': 'q', 'E': 'e',
+            'UP': 'up', 'DOWN': 'down', 'LEFT': 'left', 'RIGHT': 'right',
+            'Z': 'z', 'C': 'c',
+            'LEFT_SHIFT': 'shift', 'RIGHT_SHIFT': 'shift',
+            'LEFT_CONTROL': 'ctrl', 'RIGHT_CONTROL': 'ctrl',
         }
-        
+
         key = event.input.name
-        pressed = event.type == omni.appwindow.KeyboardEventType.KEY_PRESS
-        
+        pressed = event.type in (
+            omni.appwindow.KeyboardEventType.KEY_PRESS,
+            omni.appwindow.KeyboardEventType.KEY_REPEAT,
+        )
         if key in key_map:
             key = key_map[key]
-        
-        if key in ['w', 'a', 's', 'd', 'q', 'e']:
+
+        if key in self.controller._key_state:
             self.controller.process_key(key, pressed)
         elif key == 'SPACE' and pressed:
             self.controller.process_key('space', True)
         elif key == 'R' and pressed:
             self.controller.process_key('r', True)
+            self.should_reset = True
+        elif key in ('ESCAPE', 'ESC') and pressed:
+            self.should_quit = True
+        elif key in ('P', 'ENTER', 'RETURN') and pressed:
+            self.mark_success = True
+        elif key in ('O', 'BACKSPACE') and pressed:
+            self.mark_failure = True
+

@@ -82,3 +82,25 @@ def joint_pos(env: "ManagerBasedRLEnv", asset_cfg: SceneEntityCfg) -> torch.Tens
     if asset_cfg.joint_ids:
         return asset.data.joint_pos[:, asset_cfg.joint_ids]
     return asset.data.joint_pos
+
+
+def joint_pos_rel(env: "ManagerBasedRLEnv", asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Relative joint positions.
+    
+    Returns joint positions relative to default values.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    if asset_cfg.joint_ids:
+        return asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+    return asset.data.joint_pos - asset.data.default_joint_pos
+
+
+def joint_vel_rel(env: "ManagerBasedRLEnv", asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Relative joint velocities.
+    
+    Returns joint velocities relative to default values.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    if asset_cfg.joint_ids:
+        return asset.data.joint_vel[:, asset_cfg.joint_ids] - asset.data.default_joint_vel[:, asset_cfg.joint_ids]
+    return asset.data.joint_vel - asset.data.default_joint_vel

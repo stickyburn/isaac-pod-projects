@@ -8,6 +8,52 @@ This plan implements a proven two-phase approach for imitation learning:
 
 This approach is used by NVIDIA, Stanford, DeepMind, and is the standard for production-quality policies.
 
+## Current Status (Updated: 2026-02-05)
+
+### ✅ Completed
+
+**Phase 1: Recording Infrastructure**
+- ✅ Fixed scene configurations for Session Types A-F implemented and verified
+- ✅ All 6 environments registered and loadable via `Shelf-Sim-Recording-Session-{A-F}-v0`
+- ✅ MDP actions: EEF delta pose (7D) + gripper control (1D) using differential IK
+- ✅ Observations: Camera RGB (224×224×3=150,528 dims) + robot state (8 joints) + EEF pose + target position
+- ✅ Environment verified on RTX 4090 (RunPod) with zero_agent test
+- ✅ Wrist camera integrated - camera attached to robot gripper (fl_link8)
+
+**Camera Configuration:**
+- **Type**: Wrist camera (attached to end-effector, moves with gripper)
+- **Prim Path**: `/World/robot/fl_link8/gripper_camera`
+- **Position**: 5cm in front of gripper, pointing forward (Z-axis)
+- **Resolution**: 224×224 pixels (RGB)
+- **FOV**: 24mm focal length, ~20.9mm horizontal aperture
+- **USD Update**: Added camera to `piper_arm_sensor.usd`
+
+**Verification Results:**
+- Environment loads successfully with all managers active
+- Observation space: 150,556 dims (camera + state + EEF + target)
+- Action space: 8 dims (7 EEF delta pose + 1 gripper)
+- Camera rendering enabled and functional
+- Physics simulation stable at 120 Hz
+
+### 🔄 In Progress
+- Teleoperation controller integration for keyboard control
+- HDF5 recording script with demonstration capture
+- Success criteria validation during recording
+
+### ⏳ Next Steps
+1. Complete teleoperation interface with IK-based keyboard control
+2. Implement HDF5 recording with demonstration metadata
+3. Record 15-30 demonstrations across all session types
+4. Mimic integration for data generation
+
+### Run with
+
+`/opt/IsaacLab/isaaclab.sh -p scripts/zero_agent.py \
+    --task=Shelf-Sim-Recording-Session-A-v0 \
+    --headless \
+    --enable_cameras \
+    --num_envs=1`
+
 ---
 
 ## Phase 1: Recording Environment (Human Demos)
@@ -235,8 +281,12 @@ Training:
 ## Implementation Roadmap
 
 ### Week 1: Recording Infrastructure
-- [ ] Implement fixed scene configurations (Session Types A-F)
-- [ ] Build IK-based teleoperation controller
+- [x] Implement fixed scene configurations (Session Types A-F) - **COMPLETED**
+- [x] Define MDP actions, observations, rewards, terminations - **COMPLETED**
+- [x] Environment registration and verification - **COMPLETED**
+- [x] Verify on RTX 4090 with zero_agent test - **COMPLETED**
+- [x] Add wrist camera to piper_arm_sensor.usd - **COMPLETED**
+- [ ] Build IK-based teleoperation controller - **IN PROGRESS**
 - [ ] Create recording script with HDF5 output
 - [ ] Implement success criteria validation
 - [ ] Record 15-30 demonstrations
@@ -267,28 +317,34 @@ Training:
 ```
 projects/shelf_sim/
 ├── PLAN.md                          # This document
+├── RECORDING_AND_TRAINING_PLAN.md   # Detailed implementation plan
 ├── source/shelf_sim/
 │   └── shelf_sim/
 │       └── tasks/
 │           └── manager_based/
-│               └── shelf_sim/
-│                   ├── shelf_sim_env_cfg.py      # Base environment config
-│                   ├── recording_env_cfg.py      # Fixed scene configs
-│                   ├── training_env_cfg.py       # Randomized configs
+│               ├── shelf_sim/              # Base environment (existing)
+│               └── shelf_sim_recording/    # NEW: Recording environments
+│                   ├── recording_env_cfg.py      # Fixed scene configs for Sessions A-F ✅
 │                   ├── mdp/
-│                   │   ├── actions.py            # Teleop action space
-│                   │   ├── observations.py       # State + camera obs
-│                   │   ├── rewards.py            # Task rewards
-│                   │   └── terminations.py       # Success/failure conditions
-│                   └── agents/                   # Policy networks
+│                   │   ├── actions.py            # EEF delta pose + gripper actions ✅
+│                   │   ├── observations.py       # Camera RGB + state + EEF ✅
+│                   │   ├── rewards.py            # Task rewards ✅
+│                   │   └── terminations.py       # Success/failure conditions ✅
+│                   └── agents/                   # Policy network configs
+│               └── shelf_sim_training/     # TODO: Training environments with randomization
+├── controllers/
+│   └── teleop_ik.py                # IK-based keyboard teleoperation controller
 ├── scripts/
-│   ├── record_demos.py             # Teleop recording
-│   ├── replay_demos.py             # Validation
-│   ├── generate_mimic_data.py      # Mimic data generation
-│   ├── train_policy.py             # BC training
-│   └── eval_policy.py              # Evaluation
+│   ├── list_envs.py                # List registered environments
+│   ├── zero_agent.py               # Test environment with zero actions ✅
+│   ├── random_agent.py             # Test environment with random actions
+│   ├── record_demos.py             # Teleop recording (TODO)
+│   ├── replay_demos.py             # Validation (TODO)
+│   ├── generate_mimic_data.py      # Mimic data generation (TODO)
+│   ├── train_policy.py             # BC training (TODO)
+│   └── eval_policy.py              # Evaluation (TODO)
 ├── configs/
-│   ├── recording_scenes.yaml       # Session type definitions
+│   ├── recording_scenes.yaml       # Session type definitions ✅
 │   └── training_randomization.yaml # Randomization parameters
 └── data/
     ├── recordings/                 # Human demos (HDF5)

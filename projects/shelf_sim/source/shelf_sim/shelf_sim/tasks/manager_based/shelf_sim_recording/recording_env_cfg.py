@@ -19,11 +19,13 @@ Session Types:
 - F: Target item offset in bin (not center)
 """
 
+from dataclasses import field
+import json
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -43,6 +45,7 @@ from . import mdp
 
 REPO_ROOT = Path(__file__).resolve().parents[8]
 DEFAULT_MANIFEST = REPO_ROOT / "projects/shelf_sim/assets_manifest.json"
+DEFAULT_RECORDING_CFG = REPO_ROOT / "projects/shelf_sim/configs/recording_scenes.yaml"
 DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usd"
 
 ROBOT_BASE_POS = (-0.8, 0.0, 0.0)
@@ -74,6 +77,56 @@ CAMERA_RESOLUTION = (224, 224)  # For visuomotor policy
 DEFAULT_CAMERA_POS = (1.3, -1.2, 1.2)
 DEFAULT_CAMERA_TARGET = (0.0, 0.0, TABLE_TOP_Z_M + 0.1)
 
+_ASSET_PATHS_CACHE: dict[str, str] | None = None
+
+
+def _load_asset_paths() -> dict[str, str]:
+    """Load asset name -> USD path mapping from config or manifest."""
+    global _ASSET_PATHS_CACHE
+    if _ASSET_PATHS_CACHE is not None:
+        return _ASSET_PATHS_CACHE
+
+    asset_paths: dict[str, str] = {}
+    if DEFAULT_RECORDING_CFG.exists():
+        try:
+            import yaml
+
+            data = yaml.safe_load(DEFAULT_RECORDING_CFG.read_text()) or {}
+            asset_paths = data.get("asset_paths", {}) or {}
+        except Exception as exc:  # pragma: no cover - best-effort config load
+            raise RuntimeError(f"Failed to read asset mapping from {DEFAULT_RECORDING_CFG}: {exc}") from exc
+
+    if not asset_paths and DEFAULT_MANIFEST.exists():
+        data = json.loads(DEFAULT_MANIFEST.read_text())
+        for path in data.get("assets", []):
+            asset_paths[Path(path).stem] = path
+
+    _ASSET_PATHS_CACHE = asset_paths
+    return asset_paths
+
+
+def _resolve_asset_path(asset_name: str, asset_paths: dict[str, str]) -> Path:
+    if asset_name not in asset_paths:
+        available = ", ".join(sorted(asset_paths)) if asset_paths else "none"
+        raise ValueError(f"Asset '{asset_name}' not found. Available: {available}")
+    return Path(asset_paths[asset_name])
+
+
+def _make_rigid_object_cfg(
+    prim_path: str,
+    usd_path: Path,
+    position: tuple[float, float, float],
+    rotation: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+) -> RigidObjectCfg:
+    return RigidObjectCfg(
+        prim_path=prim_path,
+        spawn=sim_utils.UsdFileCfg(usd_path=str(usd_path)),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=position,
+            rot=rotation,
+        ),
+    )
+
 ##
 # Scene definition
 ##
@@ -86,6 +139,17 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
     # Number of environments (1 for recording)
     num_envs: int = 1
     env_spacing: float = 4.0
+
+    # Item spawn configuration
+    target_item: str = ""
+    bin_item_types: list[str] = field(default_factory=list)
+    bin_item_positions: list[tuple[float, float, float]] = field(default_factory=list)
+    shelf_distractors: list[tuple[str, tuple[float, float, float]]] = field(default_factory=list)
+    target_indicator_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02)
+
+    # Camera configuration
+    camera_prim_path: str = "/World/robot/fl_link/gripper_camera"
+    use_existing_camera: bool = True
 
     # Ground plane
     ground = AssetBaseCfg(
@@ -373,6 +437,57 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
         ),
     )
 
+    def __post_init__(self) -> None:
+        """Finalize dynamic scene elements (items, camera, indicators)."""
+        # Update target indicator position
+        self.target_indicator.init_state.pos = self.target_indicator_position
+
+        # Configure camera binding
+        self.camera.prim_path = self.camera_prim_path
+        if self.use_existing_camera:
+            self.camera.spawn = None
+            self.camera.offset = CameraCfg.OffsetCfg(
+                pos=(0.0, 0.0, 0.0),
+                rot=(1.0, 0.0, 0.0, 0.0),
+                convention="local",
+            )
+
+        # Spawn items if configured
+        if self.bin_item_types:
+            self._configure_items()
+
+    def _configure_items(self) -> None:
+        if len(self.bin_item_types) != len(self.bin_item_positions):
+            raise ValueError(
+                "bin_item_types and bin_item_positions must have the same length "
+                f"(got {len(self.bin_item_types)} vs {len(self.bin_item_positions)})"
+            )
+        asset_paths = _load_asset_paths()
+
+        # Resolve target item index
+        target_index = None
+        for idx, name in enumerate(self.bin_item_types):
+            if name == self.target_item and target_index is None:
+                target_index = idx
+        if target_index is None:
+            raise ValueError(
+                f"Target item '{self.target_item}' not found in bin_item_types: {self.bin_item_types}"
+            )
+
+        # Bin items (target + distractors)
+        for idx, (asset_name, pos) in enumerate(zip(self.bin_item_types, self.bin_item_positions)):
+            obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
+            usd_path = _resolve_asset_path(asset_name, asset_paths)
+            prim_path = f"/World/items/{obj_name}"
+            setattr(self, obj_name, _make_rigid_object_cfg(prim_path, usd_path, pos))
+
+        # Shelf distractors
+        for idx, (asset_name, pos) in enumerate(self.shelf_distractors):
+            obj_name = f"shelf_item_{idx:02d}"
+            usd_path = _resolve_asset_path(asset_name, asset_paths)
+            prim_path = f"/World/shelf_items/{obj_name}"
+            setattr(self, obj_name, _make_rigid_object_cfg(prim_path, usd_path, pos))
+
 
 ##
 # MDP Settings
@@ -561,10 +676,23 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
     target_slot: str = "middle"  # Target shelf
     target_slot_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["middle"] + 0.05)
     bin_item_count: int = 1
-    bin_item_positions: list[tuple[float, float, float]] = [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
-    bin_item_types: list[str] = ["blue_tin"]
-    distractor_items: list[str] = []  # No distractors
+    bin_item_positions: list[tuple[float, float, float]] = field(
+        default_factory=lambda: [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
+    )
+    bin_item_types: list[str] = field(default_factory=lambda: ["blue_tin"])
+    distractor_items: list[str] = field(default_factory=list)  # No distractors
+    shelf_distractors: list[tuple[str, tuple[float, float, float]]] = field(default_factory=list)
     target_indicator_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02)
+
+    # Sensor + success configuration
+    camera_prim_path: str = "/World/robot/fl_link8/gripper_camera"
+    use_existing_camera: bool = True
+    eef_body_name: str = "fl_link"
+    gripper_joint_names: list[str] = field(default_factory=lambda: ["fl_joint7", "fl_joint8"])
+    gripper_open_threshold: float = 0.02
+    slot_tolerance_m: float = 0.05
+    stable_velocity_threshold_m_s: float = 0.02
+    drop_height_threshold_m: float = 0.5
 
     def __post_init__(self) -> None:
         """Post initialization."""
@@ -574,6 +702,38 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
         self.viewer.lookat = (0.0, 0.0, TABLE_TOP_Z_M)
         self.sim.dt = 1 / 120
         self.sim.render_interval = self.decimation
+
+        self._configure_scene()
+        self._configure_mdp()
+
+    def _configure_scene(self) -> None:
+        self.scene = ShelfSimRecordingSceneCfg(
+            num_envs=self.scene.num_envs,
+            env_spacing=self.scene.env_spacing,
+            target_item=self.target_item,
+            bin_item_types=self.bin_item_types,
+            bin_item_positions=self.bin_item_positions,
+            shelf_distractors=self.shelf_distractors,
+            target_indicator_position=self.target_indicator_position,
+            camera_prim_path=self.camera_prim_path,
+            use_existing_camera=self.use_existing_camera,
+        )
+
+    def _configure_mdp(self) -> None:
+        # Sync EEF and gripper names across actions/observations/terminations
+        self.actions.arm_action.body_name = self.eef_body_name
+        self.observations.policy.eef_pos.params["asset_cfg"] = SceneEntityCfg(
+            "robot", body_names=[self.eef_body_name]
+        )
+        self.observations.policy.eef_quat.params["asset_cfg"] = SceneEntityCfg(
+            "robot", body_names=[self.eef_body_name]
+        )
+        self.observations.policy.gripper_pos.params["asset_cfg"] = SceneEntityCfg(
+            "robot", joint_names=self.gripper_joint_names
+        )
+        self.terminations.eef_out_of_bounds.params["asset_cfg"] = SceneEntityCfg(
+            "robot", body_names=[self.eef_body_name]
+        )
 
 
 @configclass
@@ -585,12 +745,14 @@ class SessionBEnvCfg(SessionAEnvCfg):
     target_slot: str = "middle"
     bin_item_count: int = 2
     # Target on top, distractor below
-    bin_item_positions: list[tuple[float, float, float]] = [
-        (0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.12),  # Target on top
-        (0.05, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05),  # Distractor below
-    ]
-    bin_item_types: list[str] = ["blue_tin", "mustard_jar"]
-    distractor_items: list[str] = ["mustard_jar"]
+    bin_item_positions: list[tuple[float, float, float]] = field(
+        default_factory=lambda: [
+            (0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.12),  # Target on top
+            (0.05, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05),  # Distractor below
+        ]
+    )
+    bin_item_types: list[str] = field(default_factory=lambda: ["blue_tin", "mustard_jar"])
+    distractor_items: list[str] = field(default_factory=lambda: ["mustard_jar"])
 
 
 @configclass
@@ -601,11 +763,14 @@ class SessionCEnvCfg(SessionAEnvCfg):
     target_item: str = "blue_tin"
     target_slot: str = "middle"
     bin_item_count: int = 1
-    bin_item_positions: list[tuple[float, float, float]] = [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
-    bin_item_types: list[str] = ["blue_tin"]
+    bin_item_positions: list[tuple[float, float, float]] = field(
+        default_factory=lambda: [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
+    )
+    bin_item_types: list[str] = field(default_factory=lambda: ["blue_tin"])
     # Distractor on shelf
-    shelf_distractor: str = "salt_box"
-    shelf_distractor_position: tuple[float, float, float] = (0.75, 0.15, SHELF_POSITIONS["middle"] + 0.05)
+    shelf_distractors: list[tuple[str, tuple[float, float, float]]] = field(
+        default_factory=lambda: [("salt_box", (0.75, 0.15, SHELF_POSITIONS["middle"] + 0.05))]
+    )
 
 
 @configclass
@@ -617,8 +782,10 @@ class SessionDEnvCfg(SessionAEnvCfg):
     target_slot: str = "top"  # Different height
     target_slot_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["top"] + 0.05)
     bin_item_count: int = 1
-    bin_item_positions: list[tuple[float, float, float]] = [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
-    bin_item_types: list[str] = ["blue_tin"]
+    bin_item_positions: list[tuple[float, float, float]] = field(
+        default_factory=lambda: [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
+    )
+    bin_item_types: list[str] = field(default_factory=lambda: ["blue_tin"])
     target_indicator_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["top"] + 0.02)
 
 
@@ -630,8 +797,10 @@ class SessionEEnvCfg(SessionAEnvCfg):
     target_item: str = "mustard_jar"  # Different item type
     target_slot: str = "middle"
     bin_item_count: int = 1
-    bin_item_positions: list[tuple[float, float, float]] = [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
-    bin_item_types: list[str] = ["mustard_jar"]
+    bin_item_positions: list[tuple[float, float, float]] = field(
+        default_factory=lambda: [(0.0, 0.0, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)]
+    )
+    bin_item_types: list[str] = field(default_factory=lambda: ["mustard_jar"])
 
 
 @configclass
@@ -643,7 +812,9 @@ class SessionFEnvCfg(SessionAEnvCfg):
     target_slot: str = "middle"
     bin_item_count: int = 1
     # Offset from center
-    bin_item_positions: list[tuple[float, float, float]] = [
-        (0.1, -0.08, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)  # Offset position
-    ]
-    bin_item_types: list[str] = ["blue_tin"]
+    bin_item_positions: list[tuple[float, float, float]] = field(
+        default_factory=lambda: [
+            (0.1, -0.08, TABLE_TOP_Z_M + BIN_BASE_THICKNESS_M + 0.05)  # Offset position
+        ]
+    )
+    bin_item_types: list[str] = field(default_factory=lambda: ["blue_tin"])

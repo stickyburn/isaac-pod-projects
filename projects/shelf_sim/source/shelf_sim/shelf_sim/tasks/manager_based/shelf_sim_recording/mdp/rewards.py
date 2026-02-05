@@ -16,8 +16,6 @@ from typing import TYPE_CHECKING
 
 import torch
 from isaaclab.assets import Articulation, RigidObject
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import compute_pose_error
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -31,9 +29,10 @@ def is_success(env: "ManagerBasedRLEnv") -> torch.Tensor:
     2. Item velocity is low (stable)
     3. Gripper is open
     """
-    # TODO: Implement based on item and gripper state
-    # For now, return zeros
-    return torch.zeros(env.num_envs, device=env.device)
+    # Reuse termination logic for success
+    from .terminations import item_placed_in_slot
+
+    return item_placed_in_slot(env).float()
 
 
 def approach_target_reward(env: "ManagerBasedRLEnv") -> torch.Tensor:
@@ -43,20 +42,20 @@ def approach_target_reward(env: "ManagerBasedRLEnv") -> torch.Tensor:
     """
     # Get EEF position
     robot: Articulation = env.scene["robot"]
-    eef_pos = robot.data.body_pos_w[:, 0]  # Assuming body 0 is EEF
-    
-    # Get target item position (first item in scene)
-    # TODO: Access item position properly
-    # For now, use fixed position from bin
-    target_pos = torch.tensor(
-        [0.0, 0.0, 0.8],
-        device=env.device,
-    ).unsqueeze(0).expand(env.num_envs, -1)
-    
-    # Compute distance
+    eef_body_name = getattr(env.cfg, "eef_body_name", "fl_link8")
+    if not hasattr(env, "_eef_body_id"):
+        body_ids, _ = robot.find_bodies(eef_body_name)
+        env._eef_body_id = body_ids[0]
+    eef_pos = robot.data.body_pos_w[:, env._eef_body_id]
+
+    # Get target item position
+    if "target_item" in env.scene.rigid_objects:
+        target_obj: RigidObject = env.scene.rigid_objects["target_item"]
+        target_pos = target_obj.data.root_link_pos_w
+    else:
+        target_pos = torch.zeros((env.num_envs, 3), device=env.device)
+
     distance = torch.norm(eef_pos - target_pos, dim=-1)
-    
-    # Negative distance as reward (closer is better)
     return -distance
 
 
@@ -67,19 +66,20 @@ def place_target_reward(env: "ManagerBasedRLEnv") -> torch.Tensor:
     """
     # Get EEF position
     robot: Articulation = env.scene["robot"]
-    eef_pos = robot.data.body_pos_w[:, 0]
-    
+    eef_body_name = getattr(env.cfg, "eef_body_name", "fl_link8")
+    if not hasattr(env, "_eef_body_id"):
+        body_ids, _ = robot.find_bodies(eef_body_name)
+        env._eef_body_id = body_ids[0]
+    eef_pos = robot.data.body_pos_w[:, env._eef_body_id]
+
     # Get target slot position from config
     target_pos = torch.tensor(
         env.cfg.target_slot_position,
         device=env.device,
         dtype=torch.float32,
     ).unsqueeze(0).expand(env.num_envs, -1)
-    
-    # Compute distance
+
     distance = torch.norm(eef_pos - target_pos, dim=-1)
-    
-    # Negative distance as reward
     return -distance
 
 
@@ -88,6 +88,6 @@ def item_dropped(env: "ManagerBasedRLEnv") -> torch.Tensor:
     
     Returns 1.0 if item is below table level, 0.0 otherwise.
     """
-    # TODO: Track item position and check if below threshold
-    # For now, return zeros
-    return torch.zeros(env.num_envs, device=env.device)
+    from .terminations import item_below_threshold
+
+    return item_below_threshold(env).float()
