@@ -28,7 +28,7 @@ from . import mdp
 from isaaclab_assets.robots.cartpole import CARTPOLE_CFG  # isort:skip
 
 REPO_ROOT = Path(__file__).resolve().parents[8]
-DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usd"
+DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usda"
 ROBOT_BASE_POS = (-0.8, 0.0, 0.0)
 ROBOT_BASE_ROT = (1.0, 0.0, 0.0, 0.0)
 

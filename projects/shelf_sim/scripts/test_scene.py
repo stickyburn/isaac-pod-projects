@@ -27,7 +27,7 @@ from isaaclab.app import AppLauncher
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MANIFEST = REPO_ROOT / "projects/shelf_sim/assets_manifest.json"
 REPORTS_DIR = REPO_ROOT / "projects/shelf_sim/reports"
-DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usd"
+DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usda"
 
 SIM_DEVICE = "cuda:0"
 DROP_HEIGHT_M = 0.5

@@ -1,6 +1,6 @@
 asset_path: /workspace/storage/isaac-pod-projects/projects/piper_arm/urdf/piper.urdf
 usd_dir: /workspace/storage/isaac-pod-projects/projects/piper_usd
-usd_file_name: piper_arm.usd
+usd_file_name: piper_arm.usda
 force_usd_conversion: true
 make_instanceable: true
 fix_base: true

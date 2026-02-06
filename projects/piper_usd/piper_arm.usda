@@ -12,6 +12,11 @@ def Xform "piper_fl" (
         string Sensor = "Sensors"
     }
     prepend variantSets = ["Physics", "Sensor", "Robot"]
+    variantSelections = {
+        string Physics = "PhysX"
+        string Robot = "Robot"
+        string Sensor = "Sensors"
+    }
 )
 {
     variantSet "Physics" = {
