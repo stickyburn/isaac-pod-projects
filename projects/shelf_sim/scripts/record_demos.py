@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 import time
 from pathlib import Path
-
-from isaaclab.app import AppLauncher
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Record teleop demonstrations to HDF5.")
-    parser.add_argument("--task", type=str, required=True, help="Gym task name (e.g. Shelf-Sim-Recording-Session-A-v0).")
+    parser.add_argument("--task", type=str, default="Shelf-Sim-Recording-Session-A-v0",
+                        help="Gym task name (e.g. Shelf-Sim-Recording-Session-A-v0).")
     parser.add_argument("--output", type=Path, default=None, help="Output HDF5 path (defaults to data/recordings).")
     parser.add_argument("--num_demos", type=int, default=5, help="Number of demonstrations to record.")
     parser.add_argument("--max_steps", type=int, default=None, help="Max steps per demo (default uses env max).")
@@ -26,17 +27,40 @@ def _parse_args() -> argparse.Namespace:
         "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
     )
 
-    # Isaac Lab launcher args
-    AppLauncher.add_app_launcher_args(parser)
-    args_cli = parser.parse_args()
+    # Only add AppLauncher args when NOT running inside isaacsim
+    if not _running_inside_isaacsim():
+        from isaaclab.app import AppLauncher
+        AppLauncher.add_app_launcher_args(parser)
+
+    args_cli, _ = parser.parse_known_args()
     if not args_cli.disable_cameras:
         args_cli.enable_cameras = True
     return args_cli
 
 
+def _running_inside_isaacsim() -> bool:
+    """Check if we're running inside an existing Isaac Sim app (via `isaacsim -p`)."""
+    try:
+        from omni.isaac.kit import SimulationApp
+        # If we can import this AND there's already an app instance, we're inside isaacsim
+        app = SimulationApp.instance()
+        return app is not None
+    except (ImportError, Exception):
+        return False
+
+
 args_cli = _parse_args()
-app_launcher = AppLauncher(args_cli)
-simulation_app = app_launcher.app
+
+# Get simulation app - either existing (isaacsim -p) or create new (isaaclab.sh -p)
+if _running_inside_isaacsim():
+    from omni.isaac.kit import SimulationApp
+    simulation_app = SimulationApp.instance()
+    print("[INFO] Running inside existing Isaac Sim app (GUI mode).")
+else:
+    from isaaclab.app import AppLauncher
+    app_launcher = AppLauncher(args_cli)
+    simulation_app = app_launcher.app
+    print("[INFO] Created new simulation app via AppLauncher.")
 
 import gymnasium as gym
 import h5py
