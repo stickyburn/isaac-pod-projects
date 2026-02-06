@@ -25,7 +25,8 @@ from typing import TYPE_CHECKING
 
 import torch
 import numpy as np
-from isaaclab.controllers.differential_ik import DifferentialIKController, DifferentialIKControllerCfg
+from isaaclab.controllers.differential_ik import DifferentialIKController
+from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.devices import DeviceBase
 
 if TYPE_CHECKING:
