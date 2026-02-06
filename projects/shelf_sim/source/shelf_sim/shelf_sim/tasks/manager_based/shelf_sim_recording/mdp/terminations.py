@@ -27,31 +27,35 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def reset_robot_to_default(env: "ManagerBasedRLEnv") -> None:
+def reset_robot_to_default(env: "ManagerBasedRLEnv", env_ids: torch.Tensor) -> None:
     """Reset robot joints to default position and velocity.
     
     Args:
         env: The environment instance
+        env_ids: Environment indices to reset
     """
     # Get robot asset directly
     asset: Articulation = env.scene["robot"]
     
     # Reset to default joint state
-    default_pos = asset.data.default_joint_pos
-    default_vel = asset.data.default_joint_vel
-    asset.write_joint_state_to_sim(default_pos, default_vel)
+    default_pos = asset.data.default_joint_pos[env_ids]
+    default_vel = asset.data.default_joint_vel[env_ids]
+    asset.write_joint_state_to_sim(default_pos, default_vel, env_ids=env_ids)
 
 
-def reset_scene_to_default(env: "ManagerBasedRLEnv") -> None:
+def reset_scene_to_default(env: "ManagerBasedRLEnv", env_ids: torch.Tensor) -> None:
     """Reset scene objects to default state.
     
     Args:
         env: The environment instance
+        env_ids: Environment indices to reset
     """
     # Reset all rigid objects to default state
     if env.scene.rigid_objects:
         for obj in env.scene.rigid_objects.values():
-            obj.write_state_to_sim(obj.data.default_state)
+            # Write default state for specified environments
+            default_state = obj.data.default_root_state[env_ids]
+            obj.write_root_state_to_sim(default_state, env_ids=env_ids)
 
 
 def item_placed_in_slot(env: "ManagerBasedRLEnv") -> torch.Tensor:
@@ -144,11 +148,15 @@ def _is_gripper_open(env: "ManagerBasedRLEnv") -> torch.Tensor:
     return joint_pos.mean(dim=-1) >= open_threshold
 
 
-def spawn_session_items(env: "ManagerBasedRLEnv") -> None:
+def spawn_session_items(env: "ManagerBasedRLEnv", env_ids: torch.Tensor) -> None:
     """Spawn items for the recording session (called at reset).
     
     This spawns bin items and shelf distractors based on the session configuration.
     Physics APIs are applied dynamically to ensure proper rigid body setup.
+    
+    Args:
+        env: The environment instance
+        env_ids: Environment indices to reset (spawning only happens once)
     """
     if hasattr(env, "_items_spawned") and env._items_spawned:
         return
