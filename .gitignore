@@ -9,11 +9,11 @@
 **/.thumbs
 
 # No USD files allowed in the repo
-**/*.usd
-**/*.usda
-**/*.usdc
-**/*.usdz
-**/assets/
+# **/*.usd
+# **/*.usda
+# **/*.usdc
+# **/*.usdz
+# **/assets/
 
 # Python
 .DS_Store
@@ -70,5 +70,3 @@ tests/
 
 # Docker history
 .isaac-lab-docker-history
-
-.DS_Store
