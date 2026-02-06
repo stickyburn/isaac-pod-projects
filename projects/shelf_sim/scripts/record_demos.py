@@ -19,10 +19,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
-# ── Parse args BEFORE creating the app ──────────────────────────────────────
+from isaaclab.app import AppLauncher
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Record teleop demonstrations to HDF5.")
@@ -50,29 +52,29 @@ def _parse_args() -> argparse.Namespace:
                         help="Speed multiplier when holding Shift.")
     parser.add_argument("--slow_scale", type=float, default=0.3,
                         help="Speed multiplier when holding Ctrl.")
-    parser.add_argument("--headless", action="store_true", default=False,
-                        help="Run without GUI window.")
-    parser.add_argument("--device", type=str, default="cuda:0",
-                        help="Simulation device.")
-    parser.add_argument("--disable_fabric", action="store_true", default=False,
-                        help="Disable fabric and use USD I/O operations.")
-    args_cli, _ = parser.parse_known_args()
+    parser.add_argument(
+        "--disable_fabric", action="store_true", default=False,
+        help="Disable fabric and use USD I/O operations.",
+    )
+
+    AppLauncher.add_app_launcher_args(parser)
+    args_cli = parser.parse_args()
+
+    if not args_cli.disable_cameras:
+        args_cli.enable_cameras = True
+
+    # Force GUI experience file instead of headless
+    # AppLauncher picks isaaclab.python.headless.rendering.kit by default,
+    # which has no window. We override to use isaacsim's full rendering experience.
+    if not args_cli.headless:
+        args_cli.experience = ""  # Empty string = use isaacsim default (GUI)
+
     return args_cli
 
 
 args_cli = _parse_args()
-
-# ── Create SimulationApp directly (bypasses AppLauncher's headless forcing) ─
-
-from isaacsim import SimulationApp
-
-simulation_app = SimulationApp({
-    "headless": args_cli.headless,
-    "width": 1280,
-    "height": 720,
-    "window_title": f"Shelf Sim Teleop - {args_cli.task}",
-    "enable_cameras": not args_cli.disable_cameras,
-})
+app_launcher = AppLauncher(args_cli)
+simulation_app = app_launcher.app
 
 # ── Now safe to import Omni / Isaac Lab modules ────────────────────────────
 
@@ -81,7 +83,6 @@ import h5py
 import numpy as np
 import torch
 
-import isaaclab.sim as sim_utils  # noqa: F401
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
@@ -173,11 +174,9 @@ class DemoRecorder:
 # ── Main loop ───────────────────────────────────────────────────────────────
 
 def main() -> int:
-    # Note: use_fabric=False is required when using SimulationApp directly
-    # (AppLauncher normally handles fabric initialization)
     env_cfg = parse_env_cfg(
         args_cli.task, device=args_cli.device, num_envs=1,
-        use_fabric=False,
+        use_fabric=not args_cli.disable_fabric,
     )
     env = gym.make(args_cli.task, cfg=env_cfg)
 
