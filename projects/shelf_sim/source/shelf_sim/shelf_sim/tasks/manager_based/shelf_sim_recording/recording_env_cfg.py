@@ -20,7 +20,6 @@ Session Types:
 """
 
 from dataclasses import field
-import json
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
@@ -44,7 +43,6 @@ from . import mdp
 ##
 
 REPO_ROOT = Path(__file__).resolve().parents[8]
-DEFAULT_MANIFEST = REPO_ROOT / "projects/shelf_sim/assets_manifest.json"
 DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usda"
 
 ROBOT_BASE_POS = (-0.8, 0.0, 0.0)
@@ -76,52 +74,48 @@ CAMERA_RESOLUTION = (224, 224)  # For visuomotor policy
 DEFAULT_CAMERA_POS = (1.3, -1.2, 1.2)
 DEFAULT_CAMERA_TARGET = (0.0, 0.0, TABLE_TOP_Z_M + 0.1)
 
-# Asset loading helpers
-_ASSET_PATHS_CACHE: dict[str, str] | None = None
-
-
-def _load_asset_paths() -> dict[str, str]:
-    """Load asset name -> USD path mapping from manifest."""
-    global _ASSET_PATHS_CACHE
-    if _ASSET_PATHS_CACHE is not None:
-        return _ASSET_PATHS_CACHE
-
-    asset_paths: dict[str, str] = {}
-    if DEFAULT_MANIFEST.exists():
-        data = json.loads(DEFAULT_MANIFEST.read_text())
-        for path in data.get("assets", []):
-            asset_paths[Path(path).stem] = path
-
-    _ASSET_PATHS_CACHE = asset_paths
-    return asset_paths
-
-
-def _resolve_asset_path(asset_name: str, asset_paths: dict[str, str]) -> Path:
-    """Resolve asset name to USD file path."""
-    if asset_name not in asset_paths:
-        available = ", ".join(sorted(asset_paths)) if asset_paths else "none"
-        raise ValueError(f"Asset '{asset_name}' not found. Available: {available}")
-    return Path(asset_paths[asset_name])
+# Color palette for item stand-ins
+_ITEM_COLORS: dict[str, tuple[float, float, float]] = {
+    "blue_tin": (0.1, 0.3, 0.8),
+    "mustard_jar": (0.9, 0.8, 0.1),
+    "oil_tin": (0.2, 0.6, 0.2),
+    "salt_box": (0.9, 0.9, 0.9),
+    "TinCan": (0.6, 0.6, 0.6),
+}
+# Default item sizes (W, D, H) in meters
+_ITEM_SIZES: dict[str, tuple[float, float, float]] = {
+    "blue_tin": (0.06, 0.06, 0.10),
+    "mustard_jar": (0.06, 0.06, 0.14),
+    "oil_tin": (0.06, 0.06, 0.12),
+    "salt_box": (0.06, 0.10, 0.14),
+    "TinCan": (0.07, 0.07, 0.10),
+}
+_DEFAULT_ITEM_SIZE = (0.06, 0.06, 0.10)
+_DEFAULT_ITEM_COLOR = (0.5, 0.5, 0.5)
 
 
 def _make_rigid_object_cfg(
     prim_path: str,
-    usd_path: Path,
+    asset_name: str,
     position: tuple[float, float, float],
     rotation: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
 ) -> RigidObjectCfg:
-    """Create a RigidObjectCfg for spawning a USD asset with physics."""
+    """Create a RigidObjectCfg using a colored cuboid stand-in.
+    
+    Note: Real USD meshes from /workspace/assets don't have RigidBodyAPI
+    pre-applied. Using cuboid stand-ins to get the pipeline working.
+    TODO: Swap to real USD meshes once we have a proper physics-apply callback.
+    """
+    size = _ITEM_SIZES.get(asset_name, _DEFAULT_ITEM_SIZE)
+    color = _ITEM_COLORS.get(asset_name, _DEFAULT_ITEM_COLOR)
     return RigidObjectCfg(
         prim_path=prim_path,
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=str(usd_path),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                rigid_body_enabled=True,
-                kinematic_enabled=False,
-                disable_gravity=False,
-            ),
+        spawn=sim_utils.CuboidCfg(
+            size=size,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
             collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=position,
@@ -665,11 +659,9 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
                 convention="local",
             )
 
-        # Load asset paths
+        # Spawn items as rigid body cuboid stand-ins
         if not self.bin_item_types:
-            return  # No items to spawn
-        
-        asset_paths = _load_asset_paths()
+            return
         
         # Find target item index
         target_index = None
@@ -683,13 +675,12 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
         if len(self.bin_item_types) != len(self.bin_item_positions):
             raise ValueError("bin_item_types and bin_item_positions must have same length")
         
-        # Spawn bin items dynamically
+        # Spawn bin items
         for idx, (asset_name, pos) in enumerate(zip(self.bin_item_types, self.bin_item_positions)):
             obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
-            usd_path = _resolve_asset_path(asset_name, asset_paths)
             rigid_cfg = _make_rigid_object_cfg(
                 prim_path=f"{{ENV_REGEX_NS}}/{obj_name}",
-                usd_path=usd_path,
+                asset_name=asset_name,
                 position=pos,
             )
             setattr(self.scene, obj_name, rigid_cfg)
@@ -697,10 +688,9 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
         # Spawn shelf distractors
         for idx, (asset_name, pos) in enumerate(self.shelf_distractors):
             obj_name = f"shelf_item_{idx:02d}"
-            usd_path = _resolve_asset_path(asset_name, asset_paths)
             rigid_cfg = _make_rigid_object_cfg(
                 prim_path=f"{{ENV_REGEX_NS}}/{obj_name}",
-                usd_path=usd_path,
+                asset_name=asset_name,
                 position=pos,
             )
             setattr(self.scene, obj_name, rigid_cfg)
