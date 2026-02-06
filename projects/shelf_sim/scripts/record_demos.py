@@ -173,9 +173,11 @@ class DemoRecorder:
 # ── Main loop ───────────────────────────────────────────────────────────────
 
 def main() -> int:
+    # Note: use_fabric=False is required when using SimulationApp directly
+    # (AppLauncher normally handles fabric initialization)
     env_cfg = parse_env_cfg(
         args_cli.task, device=args_cli.device, num_envs=1,
-        use_fabric=not args_cli.disable_fabric,
+        use_fabric=False,
     )
     env = gym.make(args_cli.task, cfg=env_cfg)
 
