@@ -564,8 +564,8 @@ class TerminationsCfg:
     # Failure: item dropped (fell below table)
     item_dropped = DoneTerm(func=mdp.item_below_threshold)
     
-    # Timeout (uses Isaac Lab's built-in)
-    time_out = DoneTerm(func=mdp.time_out, params={"time_out": True})
+    # Timeout
+    time_out = DoneTerm(func=mdp.time_out)
     
     # EEF out of bounds
     eef_out_of_bounds = DoneTerm(
