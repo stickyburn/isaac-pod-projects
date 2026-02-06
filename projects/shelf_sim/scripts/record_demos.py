@@ -63,11 +63,18 @@ def _parse_args() -> argparse.Namespace:
     if not args_cli.disable_cameras:
         args_cli.enable_cameras = True
 
-    # Force GUI experience file instead of headless
-    # AppLauncher picks isaaclab.python.headless.rendering.kit by default,
-    # which has no window. We override to use the windowed rendering experience.
+    # Experience file selection:
+    #   enable_cameras=True causes AppLauncher to auto-select
+    #   "isaaclab.python.rendering.kit" which is HEADLESS offscreen rendering
+    #   (no visible window). For teleop we need the GUI viewport, so we
+    #   explicitly request the windowed experience instead.
+    #
+    #   isaaclab.python.kit              → GUI window (viewport)
+    #   isaaclab.python.rendering.kit    → offscreen rendering only (no window)
+    #   isaaclab.python.headless.kit     → headless, no rendering
+    #   isaaclab.python.headless.rendering.kit → headless + offscreen rendering
     if not args_cli.headless:
-        args_cli.experience = "/opt/IsaacLab/apps/isaaclab.python.rendering.kit"
+        args_cli.experience = "/opt/IsaacLab/apps/isaaclab.python.kit"
 
     return args_cli
 

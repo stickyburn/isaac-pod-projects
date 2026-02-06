@@ -276,23 +276,52 @@ class KeyboardTeleopInterface:
             self._keyboard_sub = None
 
     def start(self):
-        """Start keyboard listening."""
+        """Start keyboard listening.
+
+        Requires a GUI window (experience ``isaaclab.python.kit``).  If the
+        app window or keyboard cannot be acquired (e.g. headless / offscreen
+        rendering experience), this prints a diagnostic and sets
+        ``should_quit = True`` so the caller can bail out immediately.
+        """
         self._running = True
         try:
             import carb.input
             import omni.appwindow
-            
+
             self._input = carb.input.acquire_input_interface()
             self._appwindow = omni.appwindow.get_default_app_window()
+            if self._appwindow is None:
+                raise RuntimeError(
+                    "omni.appwindow.get_default_app_window() returned None. "
+                    "This usually means the experience file does not create a "
+                    "GUI window.  Make sure you are NOT using a headless or "
+                    "offscreen-rendering experience (e.g. "
+                    "isaaclab.python.rendering.kit).  Use "
+                    "isaaclab.python.kit for a visible viewport."
+                )
             self._keyboard = self._appwindow.get_keyboard()
-            
+            if self._keyboard is None:
+                raise RuntimeError(
+                    "Could not acquire keyboard from the app window. "
+                    "Ensure a display is available (e.g. $DISPLAY is set "
+                    "when using VNC/KASM)."
+                )
+
             # Subscribe to keyboard events using weakref to prevent memory leaks
             self._keyboard_sub = self._input.subscribe_to_keyboard_events(
                 self._keyboard,
                 lambda event, *args, obj=weakref.proxy(self): obj._on_key_event(event, *args),
             )
+            print("[INFO] Keyboard teleop interface started.")
         except ImportError:
-            print("Warning: Could not setup keyboard interface in headless mode")
+            print(
+                "[ERROR] Could not import carb.input / omni.appwindow. "
+                "Keyboard teleop requires a GUI experience. Aborting."
+            )
+            self.should_quit = True
+        except RuntimeError as exc:
+            print(f"[ERROR] {exc}")
+            self.should_quit = True
 
     def stop(self):
         """Stop keyboard listening."""
