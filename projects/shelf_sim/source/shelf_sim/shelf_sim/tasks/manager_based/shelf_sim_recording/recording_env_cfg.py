@@ -110,10 +110,19 @@ def _make_rigid_object_cfg(
     position: tuple[float, float, float],
     rotation: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
 ) -> RigidObjectCfg:
-    """Create a RigidObjectCfg for spawning a USD asset."""
+    """Create a RigidObjectCfg for spawning a USD asset with physics."""
     return RigidObjectCfg(
         prim_path=prim_path,
-        spawn=sim_utils.UsdFileCfg(usd_path=str(usd_path)),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=str(usd_path),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                rigid_body_enabled=True,
+                kinematic_enabled=False,
+                disable_gravity=False,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=position,
             rot=rotation,
