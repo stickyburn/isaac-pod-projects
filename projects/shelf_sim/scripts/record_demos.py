@@ -65,9 +65,9 @@ def _parse_args() -> argparse.Namespace:
 
     # Force GUI experience file instead of headless
     # AppLauncher picks isaaclab.python.headless.rendering.kit by default,
-    # which has no window. We override to use isaacsim's full rendering experience.
+    # which has no window. We override to use the windowed rendering experience.
     if not args_cli.headless:
-        args_cli.experience = ""  # Empty string = use isaacsim default (GUI)
+        args_cli.experience = "/opt/IsaacLab/apps/isaaclab.python.rendering.kit"
 
     return args_cli
 
