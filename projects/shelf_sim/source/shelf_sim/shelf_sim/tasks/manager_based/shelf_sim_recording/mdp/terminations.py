@@ -27,22 +27,6 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def time_out(env: "ManagerBasedRLEnv", time_out: bool) -> torch.Tensor:
-    """Check if episode has timed out.
-    
-    Args:
-        env: The environment instance
-        time_out: Whether to check for timeout
-        
-    Returns:
-        Tensor of shape (num_envs,) with True if timeout
-    """
-    if not time_out:
-        return torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
-    # Check if current time step exceeds episode length
-    return env.episode_length_buf >= env.max_episode_length
-
-
 def reset_robot_to_default(env: "ManagerBasedRLEnv", asset_cfg: SceneEntityCfg | None = None) -> None:
     """Reset robot joints to default position and velocity.
     
