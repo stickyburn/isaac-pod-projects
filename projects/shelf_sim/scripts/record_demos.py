@@ -1,15 +1,18 @@
 """Record teleop demonstrations to HDF5.
 
-Launch with GUI:
+Launch (from KASM VNC terminal):
     /opt/IsaacLab/isaaclab.sh -p ./scripts/record_demos.py [--task ...] [--num_demos ...]
 
-Controls:
+The simulation runs headless with offscreen camera rendering (isaaclab.python.rendering.kit).
+An OpenCV window is created on the X11 display (:1.0) for visual feedback and keyboard input.
+
+Controls (focus the OpenCV window):
     WASD/QE  - Translate EEF (XY plane / Z axis)
     Arrows   - Rotate EEF (pitch/yaw)
     Z/C      - Roll rotation
     Space    - Toggle gripper open/close
-    Shift    - Fast movement
-    Ctrl     - Fine movement
+    Shift    - Fast movement (hold Shift + movement key)
+    F        - Fine/slow movement
     R        - Reset episode
     P/Enter  - Mark current demo as SUCCESS
     O/Bksp   - Mark current demo as FAILURE
@@ -51,7 +54,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--fast_scale", type=float, default=3.0,
                         help="Speed multiplier when holding Shift.")
     parser.add_argument("--slow_scale", type=float, default=0.3,
-                        help="Speed multiplier when holding Ctrl.")
+                        help="Speed multiplier when holding Ctrl/F.")
     parser.add_argument(
         "--disable_fabric", action="store_true", default=False,
         help="Disable fabric and use USD I/O operations.",
@@ -64,16 +67,8 @@ def _parse_args() -> argparse.Namespace:
         args_cli.enable_cameras = True
 
     # DO NOT manually set args_cli.experience here.
-    # AppLauncher._config_resolution auto-selects the experience file AND
-    # configures internal viewport/render flags based on headless + enable_cameras.
-    # Manually overriding the experience bypasses _config_resolution, which
-    # causes _render_viewport to stay False → no GUI window even though
-    # isaaclab.python.rendering.kit supports one.
-    #
-    # With enable_cameras=True and headless=False (the defaults here),
-    # AppLauncher will auto-select isaaclab.python.rendering.kit AND set:
-    #   _render_viewport = True   (creates the viewport window)
-    #   _offscreen_render = False (renders on-screen, not offscreen)
+    # AppLauncher._config_resolution auto-selects the experience AND sets
+    # internal viewport/render flags.  Manual override bypasses those flags.
 
     return args_cli
 
@@ -84,6 +79,7 @@ simulation_app = app_launcher.app
 
 # ── Now safe to import Omni / Isaac Lab modules ────────────────────────────
 
+import cv2
 import gymnasium as gym
 import h5py
 import numpy as np
@@ -93,12 +89,27 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
 import shelf_sim.tasks  # noqa: F401
-from shelf_sim.controllers.teleop_ik import IKTeleopController, KeyboardTeleopInterface
+from shelf_sim.controllers.teleop_ik import IKTeleopController
 from shelf_sim.tasks.manager_based.shelf_sim_recording import mdp
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT_DIR = REPO_ROOT / "projects/shelf_sim/data/recordings"
+
+# ── X11 keysym constants (from /usr/include/X11/keysymdef.h) ───────────────
+
+_XK_UP = 0xFF52
+_XK_DOWN = 0xFF54
+_XK_LEFT = 0xFF51
+_XK_RIGHT = 0xFF53
+_XK_SHIFT_L = 0xFFE1
+_XK_SHIFT_R = 0xFFE2
+_XK_CTRL_L = 0xFFE5
+_XK_CTRL_R = 0xFFE6
+_XK_SPACE = 32
+_XK_ESCAPE = 27
+_XK_RETURN = 13
+_XK_BACKSPACE = 8
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -119,6 +130,115 @@ def _read_rgb(env) -> np.ndarray | None:
     if frame.shape[-1] == 4:
         frame = frame[..., :3]
     return frame
+
+
+def _build_hud(frame: np.ndarray, step: int, demo: int, total: int,
+               controller: IKTeleopController, success_count: int) -> np.ndarray:
+    """Overlay HUD text on camera frame for teleop visualization."""
+    display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    h, w = display.shape[:2]
+
+    # Scale up for easier viewing (camera is 224x224)
+    if max(h, w) < 400:
+        scale = max(1, 480 // max(h, w))
+        display = cv2.resize(display, (w * scale, h * scale),
+                             interpolation=cv2.INTER_NEAREST)
+        h, w = display.shape[:2]
+
+    # Semi-transparent bar at top
+    overlay = display.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 52), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.55, display, 0.45, 0, display)
+
+    gripper = "OPEN" if controller._gripper_open else "CLOSED"
+    line1 = f"Demo {demo}/{total}  Step {step}"
+    line2 = f"Gripper: {gripper}  OK: {success_count}"
+    cv2.putText(display, line1, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 120), 1, cv2.LINE_AA)
+    cv2.putText(display, line2, (8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 120), 1, cv2.LINE_AA)
+    return display
+
+
+def _process_cv2_key(key: int, controller: IKTeleopController):
+    """Map an OpenCV waitKeyEx code to teleop commands.
+
+    Returns (should_quit, should_reset, mark_success, mark_failure).
+
+    Key state model: every frame we reset all movement keys to False, then
+    set only the key that was pressed THIS frame.  OS key-repeat generates
+    repeated press events while a key is held, giving continuous movement.
+    """
+    should_quit = False
+    should_reset = False
+    mark_success = False
+    mark_failure = False
+
+    # Reset all movement state each frame
+    for k in list(controller._key_state):
+        controller._key_state[k] = False
+
+    if key < 0:
+        return should_quit, should_reset, mark_success, mark_failure
+
+    # Decode extended key code
+    keysym = key & 0xFFFF
+
+    # ── Arrow keys ──────────────────────────────────────────────────────
+    if keysym == _XK_UP:
+        controller._key_state["up"] = True
+        return should_quit, should_reset, mark_success, mark_failure
+    if keysym == _XK_DOWN:
+        controller._key_state["down"] = True
+        return should_quit, should_reset, mark_success, mark_failure
+    if keysym == _XK_LEFT:
+        controller._key_state["left"] = True
+        return should_quit, should_reset, mark_success, mark_failure
+    if keysym == _XK_RIGHT:
+        controller._key_state["right"] = True
+        return should_quit, should_reset, mark_success, mark_failure
+
+    # ── Modifier-only presses (Shift/Ctrl alone – no movement) ─────────
+    if keysym in (_XK_SHIFT_L, _XK_SHIFT_R, _XK_CTRL_L, _XK_CTRL_R):
+        return should_quit, should_reset, mark_success, mark_failure
+
+    # ── Regular ASCII keys ──────────────────────────────────────────────
+    char = chr(keysym & 0xFF) if keysym < 256 else ""
+
+    # Shift detection: uppercase letter means Shift was held
+    if char.isupper():
+        controller._key_state["shift"] = True
+        char = char.lower()
+
+    # Fine mode: 'f' key (easier than Ctrl through VNC)
+    if char == "f":
+        controller._key_state["ctrl"] = True
+        return should_quit, should_reset, mark_success, mark_failure
+
+    # Movement
+    if char in ("w", "a", "s", "d", "q", "e", "z", "c"):
+        controller._key_state[char] = True
+
+    # Gripper toggle
+    elif keysym == _XK_SPACE:
+        controller.process_key("space", True)
+
+    # Reset
+    elif char == "r":
+        controller.process_key("r", True)
+        should_reset = True
+
+    # Mark success
+    elif char == "p" or keysym == _XK_RETURN:
+        mark_success = True
+
+    # Mark failure
+    elif char == "o" or keysym == _XK_BACKSPACE:
+        mark_failure = True
+
+    # Quit
+    elif keysym == _XK_ESCAPE:
+        should_quit = True
+
+    return should_quit, should_reset, mark_success, mark_failure
 
 
 class DemoRecorder:
@@ -195,9 +315,23 @@ def main() -> int:
         slow_scale=args_cli.slow_scale,
     )
     step_dt = getattr(env.unwrapped, "step_dt", 0.0)
-    teleop = KeyboardTeleopInterface(teleop_controller)
-    teleop.start()
 
+    # ── Set up OpenCV window for teleop display + keyboard input ────────
+    # The rendering experience (isaaclab.python.rendering.kit) does offscreen
+    # rendering for cameras but does NOT create a visible X11 window.
+    # We create our own via OpenCV so the user can see the camera feed on
+    # VNC and control the robot through keyboard events on that window.
+    win_name = "Shelf Sim - Teleop"
+    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(win_name, 640, 640)
+    # Show a placeholder until the first camera frame arrives
+    placeholder = np.zeros((224, 224, 3), dtype=np.uint8)
+    cv2.putText(placeholder, "Waiting for camera...", (10, 120),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 200), 1, cv2.LINE_AA)
+    cv2.imshow(win_name, placeholder)
+    cv2.waitKey(1)
+
+    # ── Output / recorder setup ─────────────────────────────────────────
     output_path = args_cli.output
     if output_path is None:
         DEFAULT_OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -220,16 +354,19 @@ def main() -> int:
     recorder = DemoRecorder(output_path, metadata, record_rgb=not args_cli.no_rgb)
 
     print(f"\n{'='*60}")
-    print(f"  SHELF SIM TELEOP RECORDING")
+    print("  SHELF SIM TELEOP RECORDING")
     print(f"{'='*60}")
     print(f"  Task:     {args_cli.task}")
     print(f"  Output:   {output_path}")
     print(f"  Demos:    0/{args_cli.num_demos}")
+    print(f"  Display:  OpenCV window (DISPLAY={os.environ.get('DISPLAY', '?')})")
     print(f"{'='*60}")
-    print(f"  WASD/QE  translate  |  Arrows  rotate")
-    print(f"  Space    gripper    |  Z/C     roll")
-    print(f"  Shift    fast       |  Ctrl    fine")
-    print(f"  R reset | P success | O failure | ESC quit")
+    print("  WASD/QE  translate  |  Arrows  rotate")
+    print("  Space    gripper    |  Z/C     roll")
+    print("  Shift    fast       |  F       fine")
+    print("  R reset | P success | O failure | ESC quit")
+    print(f"{'='*60}")
+    print("  >>> Click the OpenCV window to give it keyboard focus <<<")
     print(f"{'='*60}\n")
 
     demos_recorded = 0
@@ -245,6 +382,7 @@ def main() -> int:
             current_obs = _extract_policy_obs(obs).detach().cpu().numpy()
             rgb = _read_rgb(env) if not args_cli.no_rgb else None
 
+            # Compute teleop action from current key state
             arm_action, gripper_action = teleop_controller.advance(step_dt)
             action = torch.cat([arm_action, gripper_action], dim=-1)
 
@@ -260,7 +398,17 @@ def main() -> int:
             )
             step_count += 1
 
-            should_quit, should_reset, mark_success, mark_failure = teleop.consume_flags()
+            # ── Display camera + capture keyboard via OpenCV ────────────
+            if rgb is not None:
+                hud = _build_hud(rgb, step_count, demos_recorded,
+                                 args_cli.num_demos, teleop_controller, success_count)
+                cv2.imshow(win_name, hud)
+
+            key = cv2.waitKeyEx(1)
+            should_quit, should_reset, mark_success, mark_failure = _process_cv2_key(
+                key, teleop_controller
+            )
+
             if should_quit:
                 break
 
@@ -301,7 +449,7 @@ def main() -> int:
                 recorder.start_demo()
                 step_count = 0
 
-    teleop.stop()
+    cv2.destroyAllWindows()
     recorder.close()
     env.close()
     print(f"\n[INFO] Finished: {demos_recorded} demos, {success_count} successes.")
