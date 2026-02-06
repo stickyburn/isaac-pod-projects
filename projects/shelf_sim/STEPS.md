@@ -1,229 +1,110 @@
----
-name: Shelf Sim Piper Arm Setup
-overview: Clean up the backup files, replace the cartpole template with a real Piper arm manipulation environment, and get a working simulation running with the arm and graspable objects on a table. This is the foundation for the later imitation learning pipeline.
-todos:
-  - id: cleanup
-    content: Delete /bak directory and its contents (build_asset_manifest.py, drop_test_assets.py, test_scene.py, PLAN.md)
-    status: pending
-  - id: piper-config
-    content: Create robots/piper.py with PIPER_ARM_CFG and PIPER_ARM_HIGH_PD_CFG ArticulationCfg, using the local USD and the actuator groups from the backup test script
-    status: pending
-  - id: env-cfg
-    content: "Rewrite shelf_sim_env_cfg.py: Piper arm scene with table, graspable object, IK actions, manipulation observations, basic rewards, and terminations"
-    status: pending
-  - id: mdp-update
-    content: Update mdp/rewards.py and mdp/__init__.py with manipulation-specific reward and observation terms (EEF-object distance, object position in robot frame)
-    status: pending
-  - id: gym-register
-    content: Update __init__.py gym registration to ShelfSim-Piper-Lift-v0 with new env cfg, remove rsl_rl entry point
-    status: pending
-  - id: verify
-    content: Run random_agent.py with --task ShelfSim-Piper-Lift-v0 --headless to verify the env loads, arm is stable, and actions flow
-    status: pending
-isProject: false
----
+# Shelf Sim: Imitation Learning with Piper Arm
 
-# Shelf Sim: Piper Arm Manipulation Environment
+## Goal
 
-## Current State
+Simulate a shelf-stocking task with an Agilex Piper arm. Record human teleop demonstrations, expand them with Isaac Lab Mimic, and train a visuomotor BC policy that can later transfer to the real robot.
 
-The project has been restructured to the correct layout. However, the environment code is still the **cartpole template** from `isaaclab.sh --new` -- it spawns a cartpole, not a Piper arm. The backup scripts in `/bak` are standalone test scripts (not Isaac Lab environments) and should be removed.
+## Pipeline
 
-**What exists:**
-
-- Piper arm USD at `projects/piper_usd/piper_arm.usd` (1.4KB root + 31MB in `configuration/`) -- already converted from URDF with `fix_base: true`, convex hull colliders, 6 arm joints (`fl_joint[1-6]`) + 2 gripper joints (`fl_joint[7-8]`)
-- Cartpole template environment in `source/shelf_sim/shelf_sim/tasks/manager_based/shelf_sim/`
-- `robomimic 0.4.0` and `isaaclab_mimic` already installed
-- No assets directory (the downloaded assets from `init-repo.sh` are gone)
-
-**What we need:** A working `ManagerBasedRLEnv` with the Piper arm + a graspable object on a table, controlled via IK. We will evolve this to `ManagerBasedRLMimicEnv` in a later step once the basics work.
-
----
-
-## Step 1: Create a Piper Arm Robot Config
-
-Isaac Lab has no built-in Piper config. Create one at `source/shelf_sim/shelf_sim/robots/piper.py`, following the exact pattern from [isaaclab_assets/robots/franka](file:///opt/IsaacLab/source/isaaclab_assets/isaaclab_assets/robots/franka/__init__.py).
-
-**Key decisions:**
-
-- Use the local USD at `projects/piper_usd/piper_arm.usd` (absolute path via `os.path.abspath`)
-- Two actuator groups: `arm_joints` (fl_joint[1-6]) and `gripper_joints` (fl_joint[7-8])
-- Two configs: a standard PD config and a high-PD config (for IK tracking)
-- `fix_base: true` is already baked into the USD
-
-**Reference pattern** from `bak/test_scene.py` (lines 456-489):
-
-```python
-ArticulationCfg(
-    spawn=sim_utils.UsdFileCfg(
-        usd_path=str(usd_path.resolve()),
-        rigid_props=sim_utils.RigidBodyPropertiesCfg(
-            disable_gravity=False,
-            max_depenetration_velocity=5.0,
-        ),
-        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
-            solver_position_iteration_count=8,
-            solver_velocity_iteration_count=0,
-        ),
-    ),
-    actuators={
-        "arm_joints": ImplicitActuatorCfg(
-            joint_names_expr=["fl_joint[1-6]"],
-            effort_limit_sim=100.0,
-            velocity_limit_sim=3.0,
-            stiffness=10000.0,
-            damping=100.0,
-        ),
-        "gripper_joints": ImplicitActuatorCfg(
-            joint_names_expr=["fl_joint[7-8]"],
-            effort_limit_sim=10.0,
-            velocity_limit_sim=1.0,
-            stiffness=500.0,
-            damping=50.0,
-        ),
-    },
-)
+```
+SceneSetup -> IKControl -> Teleop+Record -> Annotate -> MimicGenerate -> TrainBC -> Evaluate
 ```
 
 ---
 
-## Step 2: Rewrite the Environment Config
+## Completed
 
-Replace the cartpole template in [shelf_sim_env_cfg.py](projects/shelf_sim/source/shelf_sim/shelf_sim/tasks/manager_based/shelf_sim/shelf_sim_env_cfg.py) with a Piper arm manipulation scene. Follow the pattern from Isaac Lab's `lift_env_cfg.py`.
+### Milestone 1: Project Scaffolding
 
-**Scene** (`ShelfSimSceneCfg`):
+- Generated project from `isaaclab.sh --new` (manager-based, single-agent)
+- Restructured: moved `.gitignore`, `.gitattributes`, `.flake8`, `.vscode/` to workspace root
+- Removed RSL-RL scripts and configs (not needed for imitation learning)
+- Cleaned up `/bak` directory (standalone test scripts replaced by proper env)
 
-- Ground plane
-- Table (cuboid, kinematic, at z=0.75)
-- Piper arm (from our custom config, positioned behind the table)
-- Object (a simple cuboid or cylinder -- we start with a primitive, not a USD asset, to keep it simple)
-- Dome light
-- End-effector frame sensor (`FrameTransformerCfg`) tracking the Piper gripper tip
+### Milestone 2: Piper Arm in Simulation
 
-**Actions** (`ActionsCfg`):
+- Created `robots/piper.py` with `PIPER_CFG` and `PIPER_HIGH_PD_CFG` (for future IK use)
+- Piper USD at `projects/piper_usd/piper_arm.usd` (converted from URDF, fixed base, convex hull colliders)
+- Joint structure: `fl_joint[1-6]` (revolute arm), `fl_joint[7-8]` (prismatic gripper)
+- Link structure: `base_link`, `fl_link[1-6]` (arm), `fl_link[7-8]` (gripper fingers)
+- Rewrote `shelf_sim_env_cfg.py`: ground + table + Piper arm + dome light
+- Actions: joint position control (arm) + binary gripper
+- Registered as `ShelfSim-Piper-v0`
+- Tested with `random_agent.py --task ShelfSim-Piper-v0 --num_envs 1` via KASM VNC
+- **Result**: Isaac Sim launches, arm and table visible, arm moves with random actions
 
-- `arm_action`: `DifferentialInverseKinematicsActionCfg` with `use_relative_mode=True` (delta EEF pose) -- this is what teleop will later feed into
-- `gripper_action`: `BinaryJointPositionActionCfg` for open/close
-
-**Observations** (`ObservationsCfg`):
-
-- Joint positions and velocities
-- Object position relative to robot root
-- EEF position (via frame transformer)
-
-**Events** (`EventCfg`):
-
-- `reset_all`: Reset scene to default
-- `reset_object_position`: Randomize object pose on the table
-
-**Rewards** (`RewardsCfg`) -- minimal for now, just enough for the random agent to run:
-
-- `reaching_object`: EEF-to-object distance reward
-- `action_rate`: Small penalty on action rate
-
-**Terminations** (`TerminationsCfg`):
-
-- Timeout
-- Object falls off table
-
-**Critical detail**: The Piper gripper end-effector body name must match a link in the USD. From the previous test scripts, this is likely the last link in the chain. We will need to discover the exact body name from the USD -- the plan accounts for this with a quick introspection step.
+**Known issue**: Arm appears white/untextured. The URDF meshes were removed after USD conversion. The mesh geometry is baked into the USD but the material/texture references may be broken. Options: re-convert from URDF with meshes present, or apply materials in the USD directly. Not blocking -- cosmetic only.
 
 ---
 
-## Step 3: Update MDP Module
+## Next Steps
 
-Replace the cartpole-specific reward in [mdp/rewards.py](projects/shelf_sim/source/shelf_sim/shelf_sim/tasks/manager_based/shelf_sim/mdp/rewards.py) with manipulation-relevant reward functions.
+### Step 3: Verify Joint/Link Names from USD
 
-For now, import everything from `isaaclab.envs.mdp` (already done in `mdp/__init__.py`) and add custom rewards as needed. The built-in `isaaclab.envs.mdp` already provides:
+Before adding IK control, we need to confirm the exact link names in the USD (particularly the end-effector link and root link). Write a small introspection script that loads the USD and prints all joint/link names. This tells us:
+- Root link name (for `FrameTransformerCfg.prim_path`)
+- End-effector body name (for `DifferentialInverseKinematicsActionCfg.body_name`)
+- Gripper tip offset (for `body_offset`)
 
-- `joint_pos_rel`, `joint_vel_rel`, `joint_vel_l2`
-- `last_action`, `action_rate_l2`
-- `reset_scene_to_default`, `reset_root_state_uniform`
-- `time_out`, `root_height_below_minimum`
+### Step 4: Switch to IK Control
 
-For manipulation-specific terms (like `object_ee_distance`, `object_position_in_robot_root_frame`), we can reference the lift task's MDP or write our own.
+Replace `JointPositionActionCfg` with `DifferentialInverseKinematicsActionCfg`:
+- Use `PIPER_HIGH_PD_CFG` (stiffer gains for IK tracking)
+- `command_type="pose"`, `use_relative_mode=True` (delta EEF pose)
+- Add `FrameTransformerCfg` to track EEF position in observations
+- Add `BinaryJointPositionActionCfg` for gripper open/close
 
----
+### Step 5: Add Graspable Object
 
-## Step 4: Update Gym Registration
+Add a rigid object (simple cuboid or cylinder) to the scene on the table:
+- `RigidObjectCfg` with collision and mass properties
+- Add `object_position_in_robot_root_frame` observation
+- Add `reset_root_state_uniform` event to randomize object position
+- Add termination if object falls off table
 
-Update [init.py](projects/shelf_sim/source/shelf_sim/shelf_sim/tasks/manager_based/shelf_sim/__init__.py) to:
+### Step 6: Camera Integration
 
-- Register the environment as `ShelfSim-Piper-Lift-v0` (replacing `Template-Shelf-Sim-v0`)
-- Remove the `rsl_rl_cfg_entry_point` (no longer using RL)
-- Point to the new `ShelfSimEnvCfg`
+Attach a camera to the wrist or scene for visuomotor observations:
+- `CameraCfg` on the Piper wrist link
+- RGB output at target resolution
+- Run with `--enable_cameras`
 
----
+### Step 7: Teleop + Recording (HDF5)
 
-## Step 5: Verify with Random Agent
+Set up the imitation learning recording pipeline:
+- Evolve env to `ManagerBasedRLMimicEnv` with required methods
+- Implement: `get_robot_eef_pose`, `target_eef_pose_to_action`, `action_to_target_eef_pose`, `actions_to_gripper_actions`, `get_subtask_term_signals`
+- Use `consolidated_demo.py` with keyboard teleop device
+- Record 10-30 clean demonstrations to HDF5
 
-Run the existing `scripts/random_agent.py` with the new environment to confirm everything loads and runs:
+### Step 8: Annotate Subtasks
 
-```bash
-/opt/IsaacLab/isaaclab.sh -p projects/shelf_sim/scripts/random_agent.py \
-  --task ShelfSim-Piper-Lift-v0 --num_envs 1 --headless
-```
+Define subtask boundaries for Mimic:
+1. Approach target item
+2. Grasp
+3. Lift
+4. Move to shelf
+5. Place and release
 
-This validates:
+### Step 9: Dataset Generation with Mimic
 
-- The Piper arm loads and physics is stable
-- IK controller solves without errors
-- The object spawns on the table
-- Observations and actions flow correctly
-- No NaN explosions
+Run `generate_dataset.py` to expand demos via object-centric transformations.
 
----
+### Step 10: Train BC Policy
 
-## Architecture Diagram
+Train with `robomimic/train.py` using behavioral cloning on the generated dataset.
 
-```mermaid
-flowchart TB
-    subgraph scene [InteractiveSceneCfg]
-        ground[Ground Plane]
-        table[Table_Cuboid]
-        robot[Piper Arm_ArticulationCfg]
-        obj[Object_RigidObjectCfg]
-        light[Dome Light]
-        ee_frame[EE FrameTransformer]
-    end
+### Step 11: Evaluate
 
-    subgraph mdp [MDP Managers]
-        actions[ActionsCfg]
-        obs[ObservationsCfg]
-        rewards[RewardsCfg]
-        events[EventCfg]
-        terms[TerminationsCfg]
-    end
-
-    subgraph actions_detail [Actions]
-        ik[DifferentialIK_RelPose]
-        grip[BinaryJointPosition]
-    end
-
-    scene --> mdp
-    actions --> actions_detail
-    ik --> robot
-    grip --> robot
-    ee_frame --> robot
-```
-
-
+Evaluate success rate across randomized scenes.
 
 ---
 
-## Key Files Changed
+## Environment Info
 
-
-| File                                                        | Action                                          |
-| ----------------------------------------------------------- | ----------------------------------------------- |
-| `bak/*`                                                     | Delete                                          |
-| `source/shelf_sim/shelf_sim/robots/__init__.py`             | New -- exports Piper configs                    |
-| `source/shelf_sim/shelf_sim/robots/piper.py`                | New -- `PIPER_ARM_CFG`, `PIPER_ARM_HIGH_PD_CFG` |
-| `source/shelf_sim/shelf_sim/tasks/.../shelf_sim_env_cfg.py` | Rewrite -- Piper arm + table + object           |
-| `source/shelf_sim/shelf_sim/tasks/.../mdp/rewards.py`       | Rewrite -- manipulation rewards                 |
-| `source/shelf_sim/shelf_sim/tasks/.../mdp/__init__.py`      | Update -- add new mdp terms                     |
-| `source/shelf_sim/shelf_sim/tasks/.../__init__.py`          | Update -- new gym registration                  |
-| `source/shelf_sim/shelf_sim/tasks/.../agents/__init__.py`   | Keep empty for now                              |
-
-
+- **Container**: RunPod with RTX 4090, KASM VNC (xfce4)
+- **Isaac Lab**: 0.47.2, Isaac Sim 5.1.0
+- **Python**: 3.11 in `/opt/isaaclab-env/`
+- **Installed**: `robomimic 0.4.0`, `isaaclab_mimic 1.0.15`
+- **Env ID**: `ShelfSim-Piper-v0`
+- **Run command**: `/opt/IsaacLab/isaaclab.sh -p scripts/random_agent.py --task ShelfSim-Piper-v0 --num_envs 1`
