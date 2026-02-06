@@ -39,9 +39,9 @@ def time_out(env: "ManagerBasedRLEnv", time_out: bool) -> torch.Tensor:
 
 def reset_joints_by_offset(
     env: "ManagerBasedRLEnv",
-    asset_cfg: SceneEntityCfg,
     position_range: tuple[float, float],
     velocity_range: tuple[float, float],
+    asset_cfg: SceneEntityCfg | None = None,
 ) -> None:
     """Reset robot joints by offset from default position.
     
@@ -51,6 +51,8 @@ def reset_joints_by_offset(
         position_range: Range for position offset (min, max)
         velocity_range: Range for velocity offset (min, max)
     """
+    if asset_cfg is None:
+        asset_cfg = SceneEntityCfg("robot")
     asset = env.scene[asset_cfg.name]
     # Reset to default positions with optional random offset
     default_pos = asset.data.default_joint_pos
