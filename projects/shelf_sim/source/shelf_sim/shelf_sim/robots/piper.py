@@ -4,7 +4,7 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 
 _PIPER_USD_PATH = str(
-    Path(__file__).resolve().parents[5] / "projects" / "piper_usd" / "piper_arm.usd"
+    Path(__file__).resolve().parents[5] / "piper_usd" / "piper_arm.usd"
 )
 
 ##
