@@ -679,7 +679,7 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
             obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
             usd_path = _resolve_asset_path(asset_name, asset_paths)
             rigid_cfg = _make_rigid_object_cfg(
-                prim_path=f"{{ENV_REGEX_NS}}/items/{obj_name}",
+                prim_path=f"{{ENV_REGEX_NS}}/{obj_name}",
                 usd_path=usd_path,
                 position=pos,
             )
@@ -690,7 +690,7 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
             obj_name = f"shelf_item_{idx:02d}"
             usd_path = _resolve_asset_path(asset_name, asset_paths)
             rigid_cfg = _make_rigid_object_cfg(
-                prim_path=f"{{ENV_REGEX_NS}}/shelf_items/{obj_name}",
+                prim_path=f"{{ENV_REGEX_NS}}/{obj_name}",
                 usd_path=usd_path,
                 position=pos,
             )
