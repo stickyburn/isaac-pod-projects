@@ -2,13 +2,8 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
-
-import math
-from pathlib import Path
-
-from isaaclab.actuators import ImplicitActuatorCfg
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBase, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -18,7 +13,6 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
-from projects.shelf_sim.source.shelf_sim.shelf_sim.robots.piper import PIPER_CFG
 
 from . import mdp
 
@@ -26,12 +20,7 @@ from . import mdp
 # Pre-defined configs
 ##
 
-from isaaclab_assets.robots.cartpole import CARTPOLE_CFG  # isort:skip
-
-REPO_ROOT = Path(__file__).resolve().parents[8]
-DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usda"
-ROBOT_BASE_POS = (-0.8, 0.0, 0.0)
-ROBOT_BASE_ROT = (1.0, 0.0, 0.0, 0.0)
+from shelf_sim.robots import PIPER_CFG  # isort:skip
 
 ##
 # Scene definition
