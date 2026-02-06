@@ -92,6 +92,43 @@ import shelf_sim.tasks  # noqa: F401
 from shelf_sim.controllers.teleop_ik import IKTeleopController
 from shelf_sim.tasks.manager_based.shelf_sim_recording import mdp
 
+# ── Verify OpenCV has GUI support (non-headless build) ─────────────────────
+
+def _check_cv2_gui() -> None:
+    """Verify OpenCV was built with GUI (highgui) support.
+
+    The Isaac Sim container ships ``opencv-python-headless`` which strips
+    ``cv2.imshow`` / ``cv2.namedWindow``.  Teleop needs a real X11 window
+    for display + keyboard input.  If the check fails we print the exact
+    pip commands to fix it and exit before wasting time on scene creation.
+    """
+    try:
+        test_win = "__cv2_gui_probe__"
+        cv2.namedWindow(test_win, cv2.WINDOW_NORMAL)
+        cv2.destroyWindow(test_win)
+    except cv2.error:
+        print(
+            "\n"
+            "=" * 64 + "\n"
+            "  ERROR: OpenCV has no GUI backend (highgui).\n"
+            "=" * 64 + "\n"
+            "  The installed opencv-python-headless package cannot create\n"
+            "  X11 windows.  Teleop requires a visible window for camera\n"
+            "  display and keyboard input.\n"
+            "\n"
+            "  Fix (run once in your container):\n"
+            "\n"
+            "    pip uninstall -y opencv-python-headless && \\\n"
+            "    pip install opencv-python\n"
+            "\n"
+            "  Then re-run this script.\n"
+            "=" * 64 + "\n"
+        )
+        raise SystemExit(1)
+
+
+_check_cv2_gui()
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT_DIR = REPO_ROOT / "projects/shelf_sim/data/recordings"
