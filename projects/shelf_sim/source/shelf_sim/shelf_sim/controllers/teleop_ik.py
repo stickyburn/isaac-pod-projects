@@ -111,6 +111,10 @@ class IKTeleopController(DeviceBase):
         self._target_pos = ee_pos_w.clone()
         self._target_quat = ee_quat_w.clone()
 
+    def add_callback(self, key: str, func):
+        """Add callback for specific key (required by DeviceBase abstract method)."""
+        pass  # Not used for this controller - we use process_key instead
+
     def reset(self):
         """Reset controller state."""
         self.ik_controller.reset()
