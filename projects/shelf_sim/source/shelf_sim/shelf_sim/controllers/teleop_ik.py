@@ -278,10 +278,12 @@ class KeyboardTeleopInterface:
     def start(self):
         """Start keyboard listening.
 
-        Requires a GUI window (experience ``isaaclab.python.kit``).  If the
-        app window or keyboard cannot be acquired (e.g. headless / offscreen
-        rendering experience), this prints a diagnostic and sets
-        ``should_quit = True`` so the caller can bail out immediately.
+        Requires a GUI viewport window.  AppLauncher creates one automatically
+        when ``headless=False`` **and** the experience file is resolved through
+        ``_config_resolution`` (i.e. ``args.experience`` is NOT overridden
+        manually).  If the app window or keyboard cannot be acquired, this
+        prints a diagnostic and sets ``should_quit = True`` so the caller can
+        bail out immediately.
         """
         self._running = True
         try:
@@ -292,19 +294,21 @@ class KeyboardTeleopInterface:
             self._appwindow = omni.appwindow.get_default_app_window()
             if self._appwindow is None:
                 raise RuntimeError(
-                    "omni.appwindow.get_default_app_window() returned None. "
-                    "This usually means the experience file does not create a "
-                    "GUI window.  Make sure you are NOT using a headless or "
-                    "offscreen-rendering experience (e.g. "
-                    "isaaclab.python.rendering.kit).  Use "
-                    "isaaclab.python.kit for a visible viewport."
+                    "omni.appwindow.get_default_app_window() returned None.\n"
+                    "  Possible causes:\n"
+                    "    1. Running in headless mode (pass without --headless)\n"
+                    "    2. args_cli.experience was set manually, bypassing\n"
+                    "       AppLauncher._config_resolution viewport flags\n"
+                    "    3. $DISPLAY not set (current: "
+                    f"{__import__('os').environ.get('DISPLAY', '<unset>')})\n"
+                    "  Fix: let AppLauncher auto-select the experience file."
                 )
             self._keyboard = self._appwindow.get_keyboard()
             if self._keyboard is None:
                 raise RuntimeError(
                     "Could not acquire keyboard from the app window. "
-                    "Ensure a display is available (e.g. $DISPLAY is set "
-                    "when using VNC/KASM)."
+                    "Ensure a display is available (DISPLAY="
+                    f"{__import__('os').environ.get('DISPLAY', '<unset>')})."
                 )
 
             # Subscribe to keyboard events using weakref to prevent memory leaks
