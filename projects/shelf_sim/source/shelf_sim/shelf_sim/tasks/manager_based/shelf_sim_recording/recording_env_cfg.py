@@ -622,8 +622,8 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
     target_indicator_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02)
 
     # Sensor + success configuration
-    camera_prim_path: str = "/World/robot/gripper_camera"
-    use_existing_camera: bool = True
+    camera_prim_path: str = "/World/robot/fl_link8/teleop_camera"
+    use_existing_camera: bool = False
     eef_body_name: str = "fl_link8"
     gripper_joint_names: list[str] = field(default_factory=lambda: ["fl_joint7", "fl_joint8"])
     gripper_open_threshold: float = 0.02
@@ -658,6 +658,12 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
             self.scene.camera.spawn = None
             self.scene.camera.offset = CameraCfg.OffsetCfg(
                 pos=(0.0, 0.0, 0.0),
+                rot=(1.0, 0.0, 0.0, 0.0),
+                convention="local",
+            )
+        else:
+            self.scene.camera.offset = CameraCfg.OffsetCfg(
+                pos=(0.05, 0.0, 0.0),
                 rot=(1.0, 0.0, 0.0, 0.0),
                 convention="local",
             )
