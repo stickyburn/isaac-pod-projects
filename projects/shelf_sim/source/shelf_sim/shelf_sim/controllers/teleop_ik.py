@@ -75,8 +75,6 @@ class IKTeleopController(DeviceBase):
         ik_cfg = DifferentialIKControllerCfg(
             command_type="pose",
             ik_method="dls",
-            position_offset=None,
-            use_relative_mode=False
         )
         self.ik_controller = DifferentialIKController(
             cfg=ik_cfg,
