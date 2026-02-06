@@ -37,31 +37,21 @@ def time_out(env: "ManagerBasedRLEnv", time_out: bool) -> torch.Tensor:
     return env.episode_length_buf >= env.max_episode_length
 
 
-def reset_joints_by_offset(
-    env: "ManagerBasedRLEnv",
-    velocity_range: tuple[float, float],
-    asset_cfg: SceneEntityCfg | None = None,
-) -> None:
-    """Reset robot joints by offset from default position.
+def reset_robot_to_default(env: "ManagerBasedRLEnv", asset_cfg: SceneEntityCfg | None = None) -> None:
+    """Reset robot joints to default position and velocity.
     
     Args:
         env: The environment instance
-        velocity_range: Range for velocity offset (min, max)
         asset_cfg: The asset configuration (defaults to "robot")
     """
     if asset_cfg is None:
         asset_cfg = SceneEntityCfg("robot")
-    asset = env.scene[asset_cfg.name]
-    # Reset to default positions with optional velocity offset
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Reset to default joint state
     default_pos = asset.data.default_joint_pos
     default_vel = asset.data.default_joint_vel
-
-    vel_offset = torch.zeros_like(default_vel)
-
-    if velocity_range[0] != velocity_range[1]:
-        vel_offset.uniform_(velocity_range[0], velocity_range[1])
-
-    asset.write_joint_state_to_sim(default_pos, default_vel + vel_offset)
+    asset.write_joint_state_to_sim(default_pos, default_vel)
 
 
 def reset_scene_to_default(env: "ManagerBasedRLEnv") -> None:

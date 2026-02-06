@@ -512,11 +512,8 @@ class EventCfg:
 
     # Reset robot to home position
     reset_robot_joints = EventTerm(
-        func=mdp.reset_joints_by_offset,
+        func=mdp.reset_robot_to_default,
         mode="reset",
-        params={
-            "velocity_range": (0.0, 0.0),
-        },
     )
 
     # Reset scene objects to default state.
