@@ -20,12 +20,11 @@ Session Types:
 """
 
 from dataclasses import field
-import json
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -45,7 +44,6 @@ from . import mdp
 
 REPO_ROOT = Path(__file__).resolve().parents[8]
 DEFAULT_MANIFEST = REPO_ROOT / "projects/shelf_sim/assets_manifest.json"
-DEFAULT_RECORDING_CFG = REPO_ROOT / "projects/shelf_sim/configs/recording_scenes.yaml"
 DEFAULT_ROBOT_USD = REPO_ROOT / "projects/piper_usd/piper_arm.usda"
 
 ROBOT_BASE_POS = (-0.8, 0.0, 0.0)
@@ -76,61 +74,6 @@ SHELF_BOUNDS = {
 CAMERA_RESOLUTION = (224, 224)  # For visuomotor policy
 DEFAULT_CAMERA_POS = (1.3, -1.2, 1.2)
 DEFAULT_CAMERA_TARGET = (0.0, 0.0, TABLE_TOP_Z_M + 0.1)
-
-_ASSET_PATHS_CACHE: dict[str, str] | None = None
-
-
-def _load_asset_paths() -> dict[str, str]:
-    """Load asset name -> USD path mapping from config or manifest."""
-    global _ASSET_PATHS_CACHE
-    if _ASSET_PATHS_CACHE is not None:
-        return _ASSET_PATHS_CACHE
-
-    asset_paths: dict[str, str] = {}
-    if DEFAULT_RECORDING_CFG.exists():
-        try:
-            import yaml
-
-            data = yaml.safe_load(DEFAULT_RECORDING_CFG.read_text()) or {}
-            asset_paths = data.get("asset_paths", {}) or {}
-        except Exception as exc:  # pragma: no cover - best-effort config load
-            raise RuntimeError(f"Failed to read asset mapping from {DEFAULT_RECORDING_CFG}: {exc}") from exc
-
-    if not asset_paths and DEFAULT_MANIFEST.exists():
-        data = json.loads(DEFAULT_MANIFEST.read_text())
-        for path in data.get("assets", []):
-            asset_paths[Path(path).stem] = path
-
-    _ASSET_PATHS_CACHE = asset_paths
-    return asset_paths
-
-
-def _resolve_asset_path(asset_name: str, asset_paths: dict[str, str]) -> Path:
-    if asset_name not in asset_paths:
-        available = ", ".join(sorted(asset_paths)) if asset_paths else "none"
-        raise ValueError(f"Asset '{asset_name}' not found. Available: {available}")
-    return Path(asset_paths[asset_name])
-
-
-def _make_rigid_object_cfg(
-    prim_path: str,
-    usd_path: Path,
-    position: tuple[float, float, float],
-    rotation: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
-) -> RigidObjectCfg:
-    return RigidObjectCfg(
-        prim_path=prim_path,
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=str(usd_path),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
-            collision_props=sim_utils.CollisionPropertiesCfg(),
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(
-            pos=position,
-            rot=rotation,
-        ),
-    )
 
 ##
 # Scene definition
@@ -526,6 +469,12 @@ class EventCfg:
         func=mdp.reset_scene_to_default,
         mode="reset",
     )
+    
+    # Spawn items at reset
+    spawn_items = EventTerm(
+        func=mdp.spawn_session_items,
+        mode="reset",
+    )
 
 
 @configclass
@@ -666,37 +615,6 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
                 pos=(0.05, 0.0, 0.0),
                 rot=(1.0, 0.0, 0.0, 0.0),
                 convention="local",
-            )
-
-        # spawn bin items
-        if len(self.bin_item_types) != len(self.bin_item_positions):
-            raise ValueError("bin_item_types and bin_item_positions must match length")
-
-        asset_paths = _load_asset_paths()
-        target_index = None
-        for idx, name in enumerate(self.bin_item_types):
-            if name == self.target_item and target_index is None:
-                target_index = idx
-        if target_index is None:
-            raise ValueError(f"Target item '{self.target_item}' not found in bin_item_types")
-
-        for idx, (asset_name, pos) in enumerate(zip(self.bin_item_types, self.bin_item_positions)):
-            obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
-            usd_path = _resolve_asset_path(asset_name, asset_paths)
-            setattr(
-                self.scene,
-                obj_name,
-                _make_rigid_object_cfg(f"/World/items/{obj_name}", usd_path, pos),
-            )
-
-        # shelf distractors
-        for idx, (asset_name, pos) in enumerate(self.shelf_distractors):
-            obj_name = f"shelf_item_{idx:02d}"
-            usd_path = _resolve_asset_path(asset_name, asset_paths)
-            setattr(
-                self.scene,
-                obj_name,
-                _make_rigid_object_cfg(f"/World/shelf_items/{obj_name}", usd_path, pos),
             )
 
     def _configure_mdp(self) -> None:

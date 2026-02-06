@@ -12,10 +12,16 @@ Termination conditions:
 """
 
 from typing import TYPE_CHECKING
+from pathlib import Path
+import json
 
 import torch
-from isaaclab.assets import Articulation, RigidObject
+from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
 from isaaclab.managers import SceneEntityCfg
+import isaaclab.sim as sim_utils
+from isaaclab.sim import schemas as schema_utils
+import isaacsim.core.utils.prims as prim_utils
+from pxr import UsdPhysics, UsdGeom, PhysxSchema
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -154,3 +160,115 @@ def _is_gripper_open(env: "ManagerBasedRLEnv") -> torch.Tensor:
     joint_pos = robot.data.joint_pos[:, env._gripper_joint_ids]
     open_threshold = getattr(env.cfg, "gripper_open_threshold", 0.02)
     return joint_pos.mean(dim=-1) >= open_threshold
+
+
+def spawn_session_items(env: "ManagerBasedRLEnv") -> None:
+    """Spawn items for the recording session (called at reset).
+    
+    This spawns bin items and shelf distractors based on the session configuration.
+    Physics APIs are applied dynamically to ensure proper rigid body setup.
+    """
+    if hasattr(env, "_items_spawned") and env._items_spawned:
+        return
+    
+    # Load asset paths
+    cfg_module_path = Path(__file__).resolve().parents[1]
+    manifest_path = cfg_module_path.parents[7] / "projects/shelf_sim/assets_manifest.json"
+    
+    asset_paths = {}
+    if manifest_path.exists():
+        data = json.loads(manifest_path.read_text())
+        for path in data.get("assets", []):
+            asset_paths[Path(path).stem] = path
+    
+    def resolve_asset(name: str) -> str:
+        if name not in asset_paths:
+            available = ", ".join(sorted(asset_paths)) if asset_paths else "none"
+            raise ValueError(f"Asset '{name}' not found. Available: {available}")
+        return asset_paths[name]
+    
+    def ensure_physics(prim_path: str) -> None:
+        """Apply physics APIs to USD asset."""
+        rigid_bodies = sim_utils.get_all_matching_child_prims(
+            prim_path, predicate=lambda p: p.HasAPI(UsdPhysics.RigidBodyAPI)
+        )
+        if len(rigid_bodies) == 0:
+            schema_utils.define_rigid_body_properties(prim_path, sim_utils.RigidBodyPropertiesCfg())
+        
+        schema_utils.define_mass_properties(prim_path, sim_utils.MassPropertiesCfg(mass=0.5))
+        
+        collisions = sim_utils.get_all_matching_child_prims(
+            prim_path, predicate=lambda p: p.HasAPI(UsdPhysics.CollisionAPI)
+        )
+        if len(collisions) == 0:
+            mesh_prims = sim_utils.get_all_matching_child_prims(
+                prim_path, predicate=lambda p: p.IsA(UsdGeom.Mesh)
+            )
+            for prim in mesh_prims:
+                if prim.IsA(UsdGeom.Mesh):
+                    mesh = UsdGeom.Mesh(prim)
+                    points = mesh.GetPointsAttr().Get()
+                    if points and len(points) > 0:
+                        schema_utils.define_collision_properties(
+                            prim.GetPath().pathString, sim_utils.CollisionPropertiesCfg()
+                        )
+                        schema_utils.define_mesh_collision_properties(
+                            prim.GetPath().pathString, schema_utils.ConvexHullPropertiesCfg()
+                        )
+    
+    # Get session config
+    bin_item_types = getattr(env.cfg, "bin_item_types", [])
+    bin_item_positions = getattr(env.cfg, "bin_item_positions", [])
+    target_item = getattr(env.cfg, "target_item", "")
+    shelf_distractors = getattr(env.cfg, "shelf_distractors", [])
+    
+    if not bin_item_types:
+        env._items_spawned = True
+        return
+    
+    # Find target item index
+    target_index = None
+    for idx, name in enumerate(bin_item_types):
+        if name == target_item and target_index is None:
+            target_index = idx
+    
+    # Spawn bin items
+    for idx, (asset_name, pos) in enumerate(zip(bin_item_types, bin_item_positions)):
+        obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
+        prim_path = f"/World/envs/env_0/items/{obj_name}"
+        usd_path = resolve_asset(asset_name)
+        
+        if prim_utils.is_prim_path_valid(prim_path):
+            prim_utils.delete_prim(prim_path)
+        
+        prim_utils.create_prim(prim_path, "Xform", usd_path=usd_path, translation=pos)
+        ensure_physics(prim_path)
+        
+        # Create RigidObject wrapper
+        obj_cfg = RigidObjectCfg(
+            prim_path=prim_path,
+            spawn=None,
+            init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
+        )
+        env.scene.rigid_objects[obj_name] = RigidObject(cfg=obj_cfg)
+    
+    # Spawn shelf distractors
+    for idx, (asset_name, pos) in enumerate(shelf_distractors):
+        obj_name = f"shelf_item_{idx:02d}"
+        prim_path = f"/World/envs/env_0/shelf_items/{obj_name}"
+        usd_path = resolve_asset(asset_name)
+        
+        if prim_utils.is_prim_path_valid(prim_path):
+            prim_utils.delete_prim(prim_path)
+        
+        prim_utils.create_prim(prim_path, "Xform", usd_path=usd_path, translation=pos)
+        ensure_physics(prim_path)
+        
+        obj_cfg = RigidObjectCfg(
+            prim_path=prim_path,
+            spawn=None,
+            init_state=RigidObjectCfg.InitialStateCfg(pos=pos),
+        )
+        env.scene.rigid_objects[obj_name] = RigidObject(cfg=obj_cfg)
+    
+    env._items_spawned = True
