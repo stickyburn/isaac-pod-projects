@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""This sub-module contains the functions that are specific to the environment."""
+"""MDP functions for the shelf_sim environment."""
 
 from isaaclab.envs.mdp import *  # noqa: F401, F403
-
-from .rewards import *  # noqa: F401, F403

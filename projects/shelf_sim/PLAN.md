@@ -236,4 +236,3 @@ flowchart LR
 - GUI tasks (asset inspection, camera view) require KASM VNC.
 - Headless is recommended for large-scale dataset generation.
 - Datasets can be large; store outside repo if needed.
-
