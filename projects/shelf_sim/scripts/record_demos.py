@@ -1,72 +1,87 @@
+"""Record teleop demonstrations to HDF5.
+
+Launch with GUI:
+    /opt/IsaacLab/isaaclab.sh -p ./scripts/record_demos.py [--task ...] [--num_demos ...]
+
+Controls:
+    WASD/QE  - Translate EEF (XY plane / Z axis)
+    Arrows   - Rotate EEF (pitch/yaw)
+    Z/C      - Roll rotation
+    Space    - Toggle gripper open/close
+    Shift    - Fast movement
+    Ctrl     - Fine movement
+    R        - Reset episode
+    P/Enter  - Mark current demo as SUCCESS
+    O/Bksp   - Mark current demo as FAILURE
+    ESC      - Quit
+"""
 from __future__ import annotations
 
 import argparse
 import json
-import os
-import sys
 import time
 from pathlib import Path
 
+# ── Parse args BEFORE creating the app ──────────────────────────────────────
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Record teleop demonstrations to HDF5.")
     parser.add_argument("--task", type=str, default="Shelf-Sim-Recording-Session-A-v0",
-                        help="Gym task name (e.g. Shelf-Sim-Recording-Session-A-v0).")
-    parser.add_argument("--output", type=Path, default=None, help="Output HDF5 path (defaults to data/recordings).")
-    parser.add_argument("--num_demos", type=int, default=5, help="Number of demonstrations to record.")
-    parser.add_argument("--max_steps", type=int, default=None, help="Max steps per demo (default uses env max).")
-    parser.add_argument("--min_steps", type=int, default=10, help="Minimum steps to keep a demo.")
-    parser.add_argument("--no_rgb", action="store_true", default=False, help="Disable recording RGB frames.")
-    parser.add_argument("--disable_cameras", action="store_true", default=False, help="Disable camera sensors.")
-    parser.add_argument("--eef_body", type=str, default="fl_link8", help="EEF body name for teleop.")
-    parser.add_argument("--pos_step", type=float, default=0.02, help="EEF translation step (meters).")
-    parser.add_argument("--rot_step", type=float, default=0.08, help="EEF rotation step (radians).")
-    parser.add_argument("--fast_scale", type=float, default=3.0, help="Speed multiplier when holding Shift.")
-    parser.add_argument("--slow_scale", type=float, default=0.3, help="Speed multiplier when holding Ctrl.")
-    parser.add_argument(
-        "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
-    )
-
-    # Only add AppLauncher args when NOT running inside isaacsim
-    if not _running_inside_isaacsim():
-        from isaaclab.app import AppLauncher
-        AppLauncher.add_app_launcher_args(parser)
-
+                        help="Gym task name.")
+    parser.add_argument("--output", type=Path, default=None,
+                        help="Output HDF5 path (defaults to data/recordings).")
+    parser.add_argument("--num_demos", type=int, default=5,
+                        help="Number of demonstrations to record.")
+    parser.add_argument("--max_steps", type=int, default=None,
+                        help="Max steps per demo (default uses env max).")
+    parser.add_argument("--min_steps", type=int, default=10,
+                        help="Minimum steps to keep a demo.")
+    parser.add_argument("--no_rgb", action="store_true", default=False,
+                        help="Disable recording RGB frames.")
+    parser.add_argument("--disable_cameras", action="store_true", default=False,
+                        help="Disable camera sensors.")
+    parser.add_argument("--eef_body", type=str, default="fl_link8",
+                        help="EEF body name for teleop.")
+    parser.add_argument("--pos_step", type=float, default=0.02,
+                        help="EEF translation step (meters).")
+    parser.add_argument("--rot_step", type=float, default=0.08,
+                        help="EEF rotation step (radians).")
+    parser.add_argument("--fast_scale", type=float, default=3.0,
+                        help="Speed multiplier when holding Shift.")
+    parser.add_argument("--slow_scale", type=float, default=0.3,
+                        help="Speed multiplier when holding Ctrl.")
+    parser.add_argument("--headless", action="store_true", default=False,
+                        help="Run without GUI window.")
+    parser.add_argument("--device", type=str, default="cuda:0",
+                        help="Simulation device.")
+    parser.add_argument("--disable_fabric", action="store_true", default=False,
+                        help="Disable fabric and use USD I/O operations.")
     args_cli, _ = parser.parse_known_args()
-    if not args_cli.disable_cameras:
-        args_cli.enable_cameras = True
     return args_cli
-
-
-def _running_inside_isaacsim() -> bool:
-    """Check if we're running inside an existing Isaac Sim app (via `isaacsim -p`)."""
-    try:
-        from omni.isaac.kit import SimulationApp
-        # If we can import this AND there's already an app instance, we're inside isaacsim
-        app = SimulationApp.instance()
-        return app is not None
-    except (ImportError, Exception):
-        return False
 
 
 args_cli = _parse_args()
 
-# Get simulation app - either existing (isaacsim -p) or create new (isaaclab.sh -p)
-if _running_inside_isaacsim():
-    from omni.isaac.kit import SimulationApp
-    simulation_app = SimulationApp.instance()
-    print("[INFO] Running inside existing Isaac Sim app (GUI mode).")
-else:
-    from isaaclab.app import AppLauncher
-    app_launcher = AppLauncher(args_cli)
-    simulation_app = app_launcher.app
-    print("[INFO] Created new simulation app via AppLauncher.")
+# ── Create SimulationApp directly (bypasses AppLauncher's headless forcing) ─
+
+from isaacsim import SimulationApp
+
+simulation_app = SimulationApp({
+    "headless": args_cli.headless,
+    "width": 1280,
+    "height": 720,
+    "window_title": f"Shelf Sim Teleop - {args_cli.task}",
+    "enable_cameras": not args_cli.disable_cameras,
+})
+
+# ── Now safe to import Omni / Isaac Lab modules ────────────────────────────
 
 import gymnasium as gym
 import h5py
 import numpy as np
 import torch
 
+import isaaclab.sim as sim_utils  # noqa: F401
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
@@ -78,6 +93,8 @@ from shelf_sim.tasks.manager_based.shelf_sim_recording import mdp
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT_DIR = REPO_ROOT / "projects/shelf_sim/data/recordings"
 
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _extract_policy_obs(obs) -> torch.Tensor:
     if isinstance(obs, dict):
@@ -108,16 +125,17 @@ class DemoRecorder:
         self._reset_buffers()
 
     def _reset_buffers(self) -> None:
-        self.obs = []
-        self.actions = []
-        self.rewards = []
-        self.dones = []
-        self.rgb = [] if self.record_rgb else None
+        self.obs: list[np.ndarray] = []
+        self.actions: list[np.ndarray] = []
+        self.rewards: list[float] = []
+        self.dones: list[bool] = []
+        self.rgb: list[np.ndarray] | None = [] if self.record_rgb else None
 
     def start_demo(self) -> None:
         self._reset_buffers()
 
-    def record_step(self, obs: np.ndarray, action: np.ndarray, reward: float, done: bool, rgb: np.ndarray | None):
+    def record_step(self, obs: np.ndarray, action: np.ndarray,
+                    reward: float, done: bool, rgb: np.ndarray | None):
         self.obs.append(obs)
         self.actions.append(action)
         self.rewards.append(reward)
@@ -130,18 +148,17 @@ class DemoRecorder:
             return False
 
         group = self.data_group.create_group(f"demo_{self.demo_index:04d}")
-        group.create_dataset("obs", data=np.asarray(self.obs, dtype=np.float32), compression="gzip", compression_opts=4)
-        group.create_dataset(
-            "actions", data=np.asarray(self.actions, dtype=np.float32), compression="gzip", compression_opts=4
-        )
-        group.create_dataset(
-            "rewards", data=np.asarray(self.rewards, dtype=np.float32), compression="gzip", compression_opts=4
-        )
-        group.create_dataset("dones", data=np.asarray(self.dones, dtype=np.bool_), compression="gzip", compression_opts=4)
+        group.create_dataset("obs", data=np.asarray(self.obs, dtype=np.float32),
+                             compression="gzip", compression_opts=4)
+        group.create_dataset("actions", data=np.asarray(self.actions, dtype=np.float32),
+                             compression="gzip", compression_opts=4)
+        group.create_dataset("rewards", data=np.asarray(self.rewards, dtype=np.float32),
+                             compression="gzip", compression_opts=4)
+        group.create_dataset("dones", data=np.asarray(self.dones, dtype=np.bool_),
+                             compression="gzip", compression_opts=4)
         if self.record_rgb and self.rgb:
-            group.create_dataset(
-                "camera_rgb", data=np.asarray(self.rgb, dtype=np.uint8), compression="gzip", compression_opts=4
-            )
+            group.create_dataset("camera_rgb", data=np.asarray(self.rgb, dtype=np.uint8),
+                                 compression="gzip", compression_opts=4)
 
         group.attrs["success"] = bool(success)
         group.attrs["length"] = len(self.obs)
@@ -153,9 +170,12 @@ class DemoRecorder:
         self.file.close()
 
 
+# ── Main loop ───────────────────────────────────────────────────────────────
+
 def main() -> int:
     env_cfg = parse_env_cfg(
-        args_cli.task, device=args_cli.device, num_envs=1, use_fabric=not args_cli.disable_fabric
+        args_cli.task, device=args_cli.device, num_envs=1,
+        use_fabric=not args_cli.disable_fabric,
     )
     env = gym.make(args_cli.task, cfg=env_cfg)
 
@@ -192,9 +212,18 @@ def main() -> int:
     }
     recorder = DemoRecorder(output_path, metadata, record_rgb=not args_cli.no_rgb)
 
-    print(f"[INFO] Recording demos to: {output_path}")
-    print("[INFO] Controls: WASD/QE translate, arrows rotate, Z/C yaw, Space gripper.")
-    print("[INFO] Shift=fast, Ctrl=slow, R=reset, P/Enter=success, O/Backspace=failure, ESC=quit.")
+    print(f"\n{'='*60}")
+    print(f"  SHELF SIM TELEOP RECORDING")
+    print(f"{'='*60}")
+    print(f"  Task:     {args_cli.task}")
+    print(f"  Output:   {output_path}")
+    print(f"  Demos:    0/{args_cli.num_demos}")
+    print(f"{'='*60}")
+    print(f"  WASD/QE  translate  |  Arrows  rotate")
+    print(f"  Space    gripper    |  Z/C     roll")
+    print(f"  Shift    fast       |  Ctrl    fine")
+    print(f"  R reset | P success | O failure | ESC quit")
+    print(f"{'='*60}\n")
 
     demos_recorded = 0
     success_count = 0
@@ -268,7 +297,8 @@ def main() -> int:
     teleop.stop()
     recorder.close()
     env.close()
-    print(f"[INFO] Finished: {demos_recorded} demos, {success_count} successes.")
+    print(f"\n[INFO] Finished: {demos_recorded} demos, {success_count} successes.")
+    print(f"[INFO] Saved to: {output_path}")
     return 0
 
 
