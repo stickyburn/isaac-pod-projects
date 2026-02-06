@@ -140,17 +140,6 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
     num_envs: int = 1
     env_spacing: float = 4.0
 
-    # Item spawn configuration
-    target_item: str = ""
-    bin_item_types: list[str] = field(default_factory=list)
-    bin_item_positions: list[tuple[float, float, float]] = field(default_factory=list)
-    shelf_distractors: list[tuple[str, tuple[float, float, float]]] = field(default_factory=list)
-    target_indicator_position: tuple[float, float, float] = (0.7, 0.0, SHELF_POSITIONS["middle"] + 0.02)
-
-    # Camera configuration
-    camera_prim_path: str = "/World/robot/gripper_camera"
-    use_existing_camera: bool = True
-
     # Ground plane
     ground = AssetBaseCfg(
         prim_path="/World/ground",
@@ -437,58 +426,6 @@ class ShelfSimRecordingSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    def __post_init__(self) -> None:
-        """Finalize dynamic scene elements (items, camera, indicators)."""
-        # Update target indicator position
-        self.target_indicator.init_state.pos = self.target_indicator_position
-
-        # Configure camera binding
-        self.camera.prim_path = self.camera_prim_path
-        if self.use_existing_camera:
-            self.camera.spawn = None
-            self.camera.offset = CameraCfg.OffsetCfg(
-                pos=(0.0, 0.0, 0.0),
-                rot=(1.0, 0.0, 0.0, 0.0),
-                convention="local",
-            )
-
-        # Spawn items if configured
-        if self.bin_item_types:
-            self._configure_items()
-
-    def _configure_items(self) -> None:
-        if len(self.bin_item_types) != len(self.bin_item_positions):
-            raise ValueError(
-                "bin_item_types and bin_item_positions must have the same length "
-                f"(got {len(self.bin_item_types)} vs {len(self.bin_item_positions)})"
-            )
-        asset_paths = _load_asset_paths()
-
-        # Resolve target item index
-        target_index = None
-        for idx, name in enumerate(self.bin_item_types):
-            if name == self.target_item and target_index is None:
-                target_index = idx
-        if target_index is None:
-            raise ValueError(
-                f"Target item '{self.target_item}' not found in bin_item_types: {self.bin_item_types}"
-            )
-
-        # Bin items (target + distractors)
-        for idx, (asset_name, pos) in enumerate(zip(self.bin_item_types, self.bin_item_positions)):
-            obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
-            usd_path = _resolve_asset_path(asset_name, asset_paths)
-            prim_path = f"/World/items/{obj_name}"
-            setattr(self, obj_name, _make_rigid_object_cfg(prim_path, usd_path, pos))
-
-        # Shelf distractors
-        for idx, (asset_name, pos) in enumerate(self.shelf_distractors):
-            obj_name = f"shelf_item_{idx:02d}"
-            usd_path = _resolve_asset_path(asset_name, asset_paths)
-            prim_path = f"/World/shelf_items/{obj_name}"
-            setattr(self, obj_name, _make_rigid_object_cfg(prim_path, usd_path, pos))
-
-
 ##
 # MDP Settings
 ##
@@ -710,14 +647,51 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
         self.scene = ShelfSimRecordingSceneCfg(
             num_envs=self.scene.num_envs,
             env_spacing=self.scene.env_spacing,
-            target_item=self.target_item,
-            bin_item_types=self.bin_item_types,
-            bin_item_positions=self.bin_item_positions,
-            shelf_distractors=self.shelf_distractors,
-            target_indicator_position=self.target_indicator_position,
-            camera_prim_path=self.camera_prim_path,
-            use_existing_camera=self.use_existing_camera,
         )
+
+        # update target indicator
+        self.scene.target_indicator.init_state.pos = self.target_indicator_position
+
+        # bind camera
+        self.scene.camera.prim_path = self.camera_prim_path
+        if self.use_existing_camera:
+            self.scene.camera.spawn = None
+            self.scene.camera.offset = CameraCfg.OffsetCfg(
+                pos=(0.0, 0.0, 0.0),
+                rot=(1.0, 0.0, 0.0, 0.0),
+                convention="local",
+            )
+
+        # spawn bin items
+        if len(self.bin_item_types) != len(self.bin_item_positions):
+            raise ValueError("bin_item_types and bin_item_positions must match length")
+
+        asset_paths = _load_asset_paths()
+        target_index = None
+        for idx, name in enumerate(self.bin_item_types):
+            if name == self.target_item and target_index is None:
+                target_index = idx
+        if target_index is None:
+            raise ValueError(f"Target item '{self.target_item}' not found in bin_item_types")
+
+        for idx, (asset_name, pos) in enumerate(zip(self.bin_item_types, self.bin_item_positions)):
+            obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
+            usd_path = _resolve_asset_path(asset_name, asset_paths)
+            setattr(
+                self.scene,
+                obj_name,
+                _make_rigid_object_cfg(f"/World/items/{obj_name}", usd_path, pos),
+            )
+
+        # shelf distractors
+        for idx, (asset_name, pos) in enumerate(self.shelf_distractors):
+            obj_name = f"shelf_item_{idx:02d}"
+            usd_path = _resolve_asset_path(asset_name, asset_paths)
+            setattr(
+                self.scene,
+                obj_name,
+                _make_rigid_object_cfg(f"/World/shelf_items/{obj_name}", usd_path, pos),
+            )
 
     def _configure_mdp(self) -> None:
         # Sync EEF and gripper names across actions/observations/terminations
