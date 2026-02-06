@@ -22,6 +22,7 @@ Controls:
 """
 
 from typing import TYPE_CHECKING
+import weakref
 
 import torch
 import numpy as np
@@ -261,28 +262,44 @@ class KeyboardTeleopInterface:
         self.controller = controller
         self._running = False
         self._keyboard_sub = None
+        self._input = None
+        self._keyboard = None
         self.should_quit = False
         self.should_reset = False
         self.mark_success = False
         self.mark_failure = False
 
+    def __del__(self):
+        """Release the keyboard interface."""
+        if self._input and self._keyboard and self._keyboard_sub:
+            self._input.unsubscribe_to_keyboard_events(self._keyboard, self._keyboard_sub)
+            self._keyboard_sub = None
+
     def start(self):
         """Start keyboard listening."""
         self._running = True
         try:
+            import carb.input
             import omni.appwindow
-            app_window = omni.appwindow.get_default_app_window()
-            input_interface = app_window.get_keyboard()
             
-            # Subscribe to keyboard events
-            self._keyboard_sub = input_interface.subscribe_to_key_event(self._on_key_event)
+            self._input = carb.input.acquire_input_interface()
+            self._appwindow = omni.appwindow.get_default_app_window()
+            self._keyboard = self._appwindow.get_keyboard()
+            
+            # Subscribe to keyboard events using weakref to prevent memory leaks
+            self._keyboard_sub = self._input.subscribe_to_keyboard_events(
+                self._keyboard,
+                lambda event, *args, obj=weakref.proxy(self): obj._on_key_event(event, *args),
+            )
         except ImportError:
             print("Warning: Could not setup keyboard interface in headless mode")
 
     def stop(self):
         """Stop keyboard listening."""
         self._running = False
-        self._keyboard_sub = None
+        if self._input and self._keyboard and self._keyboard_sub:
+            self._input.unsubscribe_to_keyboard_events(self._keyboard, self._keyboard_sub)
+            self._keyboard_sub = None
 
     def consume_flags(self) -> tuple[bool, bool, bool, bool]:
         """Consume one-shot control flags (quit/reset/success/failure)."""
@@ -292,12 +309,16 @@ class KeyboardTeleopInterface:
         self.mark_failure = False
         return flags
 
-    def _on_key_event(self, event):
-        """Handle keyboard event."""
+    def _on_key_event(self, event, *args, **kwargs):
+        """Handle keyboard event.
+        
+        Reference:
+        https://docs.omniverse.nvidia.com/dev-guide/latest/programmer_ref/input-devices/keyboard.html
+        """
         if not self._running:
-            return
+            return True
 
-        import omni.appwindow
+        import carb.input
 
         key_map = {
             'W': 'w', 'A': 'a', 'S': 's', 'D': 'd',
@@ -309,24 +330,32 @@ class KeyboardTeleopInterface:
         }
 
         key = event.input.name
-        pressed = event.type in (
-            omni.appwindow.KeyboardEventType.KEY_PRESS,
-            omni.appwindow.KeyboardEventType.KEY_REPEAT,
-        )
-        if key in key_map:
-            key = key_map[key]
+        pressed = event.type == carb.input.KeyboardEventType.KEY_PRESS
+        released = event.type == carb.input.KeyboardEventType.KEY_RELEASE
+        
+        # Map key to internal name
+        mapped_key = key_map.get(key, key)
 
-        if key in self.controller._key_state:
-            self.controller.process_key(key, pressed)
-        elif key == 'SPACE' and pressed:
-            self.controller.process_key('space', True)
-        elif key == 'R' and pressed:
-            self.controller.process_key('r', True)
-            self.should_reset = True
-        elif key in ('ESCAPE', 'ESC') and pressed:
-            self.should_quit = True
-        elif key in ('P', 'ENTER', 'RETURN') and pressed:
-            self.mark_success = True
-        elif key in ('O', 'BACKSPACE') and pressed:
-            self.mark_failure = True
+        # Handle key press
+        if pressed:
+            if mapped_key in self.controller._key_state:
+                self.controller.process_key(mapped_key, True)
+            elif key == 'SPACE':
+                self.controller.process_key('space', True)
+            elif key == 'R':
+                self.controller.process_key('r', True)
+                self.should_reset = True
+            elif key in ('ESCAPE', 'ESC'):
+                self.should_quit = True
+            elif key in ('P', 'ENTER', 'RETURN'):
+                self.mark_success = True
+            elif key in ('O', 'BACKSPACE'):
+                self.mark_failure = True
+        
+        # Handle key release
+        elif released:
+            if mapped_key in self.controller._key_state:
+                self.controller.process_key(mapped_key, False)
+        
+        return True
 
