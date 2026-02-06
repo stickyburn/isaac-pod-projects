@@ -120,7 +120,12 @@ def _make_rigid_object_cfg(
 ) -> RigidObjectCfg:
     return RigidObjectCfg(
         prim_path=prim_path,
-        spawn=sim_utils.UsdFileCfg(usd_path=str(usd_path)),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=str(usd_path),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=position,
             rot=rotation,
