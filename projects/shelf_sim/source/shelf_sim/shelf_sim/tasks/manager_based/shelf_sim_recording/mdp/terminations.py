@@ -27,16 +27,14 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def reset_robot_to_default(env: "ManagerBasedRLEnv", asset_cfg: SceneEntityCfg | None = None) -> None:
+def reset_robot_to_default(env: "ManagerBasedRLEnv") -> None:
     """Reset robot joints to default position and velocity.
     
     Args:
         env: The environment instance
-        asset_cfg: The asset configuration (defaults to "robot")
     """
-    if asset_cfg is None:
-        asset_cfg = SceneEntityCfg("robot")
-    asset: Articulation = env.scene[asset_cfg.name]
+    # Get robot asset directly
+    asset: Articulation = env.scene["robot"]
     
     # Reset to default joint state
     default_pos = asset.data.default_joint_pos
