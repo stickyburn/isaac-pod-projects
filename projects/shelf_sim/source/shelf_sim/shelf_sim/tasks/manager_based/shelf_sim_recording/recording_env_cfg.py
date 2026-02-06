@@ -20,11 +20,12 @@ Session Types:
 """
 
 from dataclasses import field
+import json
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -74,6 +75,50 @@ SHELF_BOUNDS = {
 CAMERA_RESOLUTION = (224, 224)  # For visuomotor policy
 DEFAULT_CAMERA_POS = (1.3, -1.2, 1.2)
 DEFAULT_CAMERA_TARGET = (0.0, 0.0, TABLE_TOP_Z_M + 0.1)
+
+# Asset loading helpers
+_ASSET_PATHS_CACHE: dict[str, str] | None = None
+
+
+def _load_asset_paths() -> dict[str, str]:
+    """Load asset name -> USD path mapping from manifest."""
+    global _ASSET_PATHS_CACHE
+    if _ASSET_PATHS_CACHE is not None:
+        return _ASSET_PATHS_CACHE
+
+    asset_paths: dict[str, str] = {}
+    if DEFAULT_MANIFEST.exists():
+        data = json.loads(DEFAULT_MANIFEST.read_text())
+        for path in data.get("assets", []):
+            asset_paths[Path(path).stem] = path
+
+    _ASSET_PATHS_CACHE = asset_paths
+    return asset_paths
+
+
+def _resolve_asset_path(asset_name: str, asset_paths: dict[str, str]) -> Path:
+    """Resolve asset name to USD file path."""
+    if asset_name not in asset_paths:
+        available = ", ".join(sorted(asset_paths)) if asset_paths else "none"
+        raise ValueError(f"Asset '{asset_name}' not found. Available: {available}")
+    return Path(asset_paths[asset_name])
+
+
+def _make_rigid_object_cfg(
+    prim_path: str,
+    usd_path: Path,
+    position: tuple[float, float, float],
+    rotation: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
+) -> RigidObjectCfg:
+    """Create a RigidObjectCfg for spawning a USD asset."""
+    return RigidObjectCfg(
+        prim_path=prim_path,
+        spawn=sim_utils.UsdFileCfg(usd_path=str(usd_path)),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=position,
+            rot=rotation,
+        ),
+    )
 
 ##
 # Scene definition
@@ -469,12 +514,6 @@ class EventCfg:
         func=mdp.reset_scene_to_default,
         mode="reset",
     )
-    
-    # Spawn items at reset
-    spawn_items = EventTerm(
-        func=mdp.spawn_session_items,
-        mode="reset",
-    )
 
 
 @configclass
@@ -616,6 +655,46 @@ class SessionAEnvCfg(ManagerBasedRLEnvCfg):
                 rot=(1.0, 0.0, 0.0, 0.0),
                 convention="local",
             )
+
+        # Load asset paths
+        if not self.bin_item_types:
+            return  # No items to spawn
+        
+        asset_paths = _load_asset_paths()
+        
+        # Find target item index
+        target_index = None
+        for idx, name in enumerate(self.bin_item_types):
+            if name == self.target_item and target_index is None:
+                target_index = idx
+        
+        if target_index is None:
+            raise ValueError(f"Target item '{self.target_item}' not found in bin_item_types")
+        
+        if len(self.bin_item_types) != len(self.bin_item_positions):
+            raise ValueError("bin_item_types and bin_item_positions must have same length")
+        
+        # Spawn bin items dynamically
+        for idx, (asset_name, pos) in enumerate(zip(self.bin_item_types, self.bin_item_positions)):
+            obj_name = "target_item" if idx == target_index else f"bin_item_{idx:02d}"
+            usd_path = _resolve_asset_path(asset_name, asset_paths)
+            rigid_cfg = _make_rigid_object_cfg(
+                prim_path=f"{{ENV_REGEX_NS}}/items/{obj_name}",
+                usd_path=usd_path,
+                position=pos,
+            )
+            setattr(self.scene, obj_name, rigid_cfg)
+        
+        # Spawn shelf distractors
+        for idx, (asset_name, pos) in enumerate(self.shelf_distractors):
+            obj_name = f"shelf_item_{idx:02d}"
+            usd_path = _resolve_asset_path(asset_name, asset_paths)
+            rigid_cfg = _make_rigid_object_cfg(
+                prim_path=f"{{ENV_REGEX_NS}}/shelf_items/{obj_name}",
+                usd_path=usd_path,
+                position=pos,
+            )
+            setattr(self.scene, obj_name, rigid_cfg)
 
     def _configure_mdp(self) -> None:
         # Sync EEF and gripper names across actions/observations/terminations
