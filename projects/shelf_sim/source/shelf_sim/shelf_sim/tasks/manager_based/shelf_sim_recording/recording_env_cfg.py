@@ -515,7 +515,6 @@ class EventCfg:
         func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": (0.0, 0.0),  # Fixed home pose
             "velocity_range": (0.0, 0.0),
         },
     )
