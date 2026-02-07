@@ -3,6 +3,8 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import os
+import time
 
 from isaaclab.app import AppLauncher
 
@@ -13,6 +15,19 @@ parser.add_argument(
 )
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default="Piper-Shelf-v0", help="Name of the task.")
+parser.add_argument(
+    "--record_hdf5",
+    action="store_true",
+    default=False,
+    help="Record demonstrations to HDF5 using Isaac Lab's recorder manager.",
+)
+parser.add_argument(
+    "--dataset_file",
+    type=str,
+    default="./datasets/shelf_sim_teleop.hdf5",
+    help="HDF5 output file path for demonstrations.",
+)
+parser.add_argument("--step_hz", type=int, default=30, help="Target stepping rate (Hz). Set to 0 to disable.")
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -26,13 +41,52 @@ simulation_app = app_launcher.app
 
 import gymnasium as gym
 import torch
-import numpy as np
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
-from isaaclab.devices import Se3Keyboard
+from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg
+from isaaclab.envs.mdp.recorders.recorders_cfg import ActionStateRecorderManagerCfg
+from isaaclab.managers import DatasetExportMode
 
 import shelf_sim.tasks  # noqa: F401
+
+
+class RateLimiter:
+    """Convenience class for enforcing rates in loops."""
+
+    def __init__(self, hz: int):
+        self.hz = hz
+        self.period = 1.0 / hz
+        self.next_time = time.time() + self.period
+
+    def sleep(self, env: gym.Env) -> None:
+        if self.hz <= 0:
+            return
+        while time.time() < self.next_time:
+            time.sleep(min(0.01, self.period))
+            env.sim.render()
+        self.next_time += self.period
+        if self.next_time < time.time():
+            self.next_time = time.time() + self.period
+
+
+def _configure_recording(env_cfg) -> str | None:
+    if not args_cli.record_hdf5:
+        return None
+
+    output_dir = os.path.dirname(args_cli.dataset_file) or "."
+    output_name = os.path.splitext(os.path.basename(args_cli.dataset_file))[0]
+    os.makedirs(output_dir, exist_ok=True)
+
+    env_cfg.env_name = args_cli.task.split(":")[-1]
+    env_cfg.terminations.time_out = None
+    env_cfg.observations.policy.concatenate_terms = False
+    env_cfg.recorders = ActionStateRecorderManagerCfg()
+    env_cfg.recorders.dataset_export_dir_path = output_dir
+    env_cfg.recorders.dataset_filename = output_name
+    env_cfg.recorders.dataset_export_mode = DatasetExportMode.EXPORT_SUCCEEDED_ONLY
+
+    return os.path.join(output_dir, f"{output_name}.hdf5")
 
 
 def main():
@@ -41,115 +95,119 @@ def main():
     env_cfg = parse_env_cfg(
         args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric
     )
+    dataset_path = _configure_recording(env_cfg)
+
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg)
 
     # print info
     print(f"[INFO]: Gym observation space: {env.observation_space}")
     print(f"[INFO]: Gym action space: {env.action_space}")
-    print("\n" + "="*60)
+    if dataset_path:
+        print(f"[INFO]: HDF5 recording enabled -> {dataset_path}")
+        if args_cli.num_envs != 1:
+            print("[WARN]: --record_hdf5 expects num_envs=1; only env 0 will be exported.")
+    print("\n" + "=" * 60)
     print("KEYBOARD CONTROLS:")
-    print("="*60)
+    print("=" * 60)
     print("Movement (Delta EEF Pose):")
     print("  W/S - Move Forward/Backward (X axis)")
     print("  A/D - Move Left/Right (Y axis)")
     print("  Q/E - Move Up/Down (Z axis)")
     print("\nRotation:")
-    print("  I/K - Pitch +/-")
-    print("  J/L - Roll +/-")
-    print("  U/O - Yaw +/-")
+    print("  Z/X - Roll +/-")
+    print("  T/G - Pitch +/-")
+    print("  C/V - Yaw +/-")
     print("\nGripper:")
-    print("  SPACE - Toggle Open/Close")
-    print("\nRecording:")
-    print("  ENTER - Mark episode as successful and save")
+    print("  K - Toggle Open/Close")
+    if args_cli.record_hdf5:
+        print("\nRecording:")
+        print("  ENTER - Mark episode as successful and save to HDF5")
     print("\nOther:")
     print("  R - Reset environment")
     print("  ESC - Quit")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     # Initialize keyboard device
-    # Se3Keyboard outputs: [dx, dy, dz, droll, dpitch, dyaw]
     teleop_interface = Se3Keyboard(
-        pos_sensitivity=0.01,  # 1cm per keypress
-        rot_sensitivity=0.05   # ~3 degrees per keypress
+        Se3KeyboardCfg(
+            pos_sensitivity=0.01,  # 1 cm per keypress
+            rot_sensitivity=0.05,  # ~3 degrees per keypress
+            sim_device=args_cli.device,
+        )
     )
-    
+
+    # Callback flags
+    state = {"reset": False, "save": False, "quit": False}
+
+    def request_reset():
+        state["reset"] = True
+
+    def request_save():
+        state["save"] = True
+
+    def request_quit():
+        state["quit"] = True
+
+    teleop_interface.add_callback("R", request_reset)
+    teleop_interface.add_callback("ENTER", request_save)
+    teleop_interface.add_callback("RETURN", request_save)
+    teleop_interface.add_callback("ESCAPE", request_quit)
+
     # reset environment
-    obs, info = env.reset()
-    
-    # Track gripper state (0 = closed, 1 = open)
-    gripper_open = True
-    
-    # Track if we should record this episode
-    episode_steps = []
-    recording = False
-    
+    env.reset()
+    teleop_interface.reset()
+
+    # rate limiter for stable recordings
+    rate_limiter = RateLimiter(args_cli.step_hz) if args_cli.step_hz and args_cli.step_hz > 0 else None
+
+    action_dim = env.action_space.shape[-1]
+
     # simulate environment
-    while simulation_app.is_running():
+    while simulation_app.is_running() and not state["quit"]:
         # run everything in inference mode
         with torch.inference_mode():
-            # Get keyboard input
-            try:
-                # Get delta pose from keyboard (6D: [dx, dy, dz, droll, dpitch, dyaw])
-                delta_pose = teleop_interface.advance()
-                
-                # Create action tensor
-                # Action space: [dx, dy, dz, droll, dpitch, dyaw, gripper]
-                action = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
-                
-                # Set delta pose commands
-                action[0, 0] = delta_pose[0]  # dx
-                action[0, 1] = delta_pose[1]  # dy
-                action[0, 2] = delta_pose[2]  # dz
-                action[0, 3] = delta_pose[3]  # droll
-                action[0, 4] = delta_pose[4]  # dpitch
-                action[0, 5] = delta_pose[5]  # dyaw
-                
-                # Check for gripper toggle (SPACE key)
-                if teleop_interface.is_triggered("SPACE"):
-                    gripper_open = not gripper_open
-                    print(f"[INFO] Gripper: {'OPEN' if gripper_open else 'CLOSED'}")
-                
-                # Set gripper action (0 = close, 1 = open)
-                action[0, 6] = 1.0 if gripper_open else -1.0
-                
-                # Check for reset
-                if teleop_interface.is_triggered("R"):
-                    print("[INFO] Resetting environment...")
-                    obs, info = env.reset()
-                    episode_steps = []
-                    continue
-                
-                # Check for save/success (ENTER key)
-                if teleop_interface.is_triggered("ENTER"):
-                    print(f"[INFO] Episode marked as successful! ({len(episode_steps)} steps)")
-                    # In a full implementation, this would save to HDF5
-                    # For now, just reset
-                    obs, info = env.reset()
-                    episode_steps = []
-                    continue
-                
-                # Apply the action
-                obs, reward, terminated, truncated, info = env.step(action)
-                
-                # Store step data for potential recording
-                episode_steps.append({
-                    'obs': obs.copy() if hasattr(obs, 'copy') else obs,
-                    'action': action.cpu().numpy(),
-                    'reward': reward,
-                    'terminated': terminated,
-                    'truncated': truncated,
-                })
-                
-                # Handle automatic resets
-                if terminated.any() or truncated.any():
-                    print(f"[INFO] Episode ended. ({len(episode_steps)} steps)")
-                    obs, info = env.reset()
-                    episode_steps = []
-                    
-            except Exception as e:
-                print(f"[ERROR] {e}")
-                continue
+            # Get command from keyboard (delta pose + gripper)
+            command = teleop_interface.advance()
+
+            # Create action tensor and broadcast to all envs
+            actions = torch.zeros((env.num_envs, action_dim), device=env.unwrapped.device)
+            actions[:, : command.numel()] = command
+
+            # Apply the action
+            _, _, terminated, truncated, _ = env.step(actions)
+
+            # Handle save to HDF5
+            if state["save"]:
+                if args_cli.record_hdf5:
+                    env.recorder_manager.record_pre_reset([0], force_export_or_skip=False)
+                    env.recorder_manager.set_success_to_episodes(
+                        [0], torch.tensor([[True]], dtype=torch.bool, device=env.device)
+                    )
+                    env.recorder_manager.export_episodes([0])
+                    count = env.recorder_manager.exported_successful_episode_count
+                    print(f"[INFO] Saved successful demo #{count}.")
+                else:
+                    print("[WARN] Recording disabled. Use --record_hdf5 to save demos.")
+                state["save"] = False
+                state["reset"] = True
+
+            # Handle automatic resets
+            if terminated.any() or truncated.any():
+                print("[INFO] Episode ended. Resetting...")
+                state["reset"] = True
+
+            # Reset environment if requested
+            if state["reset"]:
+                env.sim.reset()
+                if args_cli.record_hdf5:
+                    env.recorder_manager.reset()
+                env.reset()
+                teleop_interface.reset()
+                state["reset"] = False
+
+        if rate_limiter:
+            rate_limiter.sleep(env)
 
     # close the simulator
     env.close()
