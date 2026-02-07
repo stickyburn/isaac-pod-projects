@@ -55,7 +55,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = PIPER_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     ee_frame = FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/Robot",
+        prim_path="{ENV_REGEX_NS}/Robot/fl_link0",
         target_frames=[
             FrameTransformerCfg.FrameCfg(
                 name="ee_frame",
