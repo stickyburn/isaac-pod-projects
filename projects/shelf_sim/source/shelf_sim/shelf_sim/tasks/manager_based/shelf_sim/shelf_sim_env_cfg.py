@@ -6,7 +6,7 @@ from isaaclab.envs.mdp import DifferentialIKControllerCfg
 from isaaclab.sensors import CameraCfg, FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidBodyCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -16,8 +16,16 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
+import random
 
 from . import mdp
+from shelf_sim import (
+    MUSTARD_JAR_USD_PATH,
+    OIL_TIN_USD_PATH,
+    SALT_BOX_USD_PATH,
+    BLUE_TIN_USD_PATH,
+    TIN_CAN_USD_PATH,
+)
 
 ##
 # Pre-defined configs
@@ -48,11 +56,17 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.2, 0.2)),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.6, 0.0, 0.375)),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.375)),
     )
 
-    # robot
-    robot: ArticulationCfg = PIPER_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    # robot - mounted on front edge of table, facing the shelf
+    robot: ArticulationCfg = PIPER_HIGH_PD_CFG.replace(
+        prim_path="{ENV_REGEX_NS}/Robot",
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=(0.0, -0.25, 0.40),  # Center X, front edge Y, on top of table
+            rot=(0.707, 0.0, 0.0, 0.707),  # 90 deg rotation to face shelf (Y+ direction)
+        )
+    )
 
     ee_frame = FrameTransformerCfg(
         prim_path="{ENV_REGEX_NS}/Robot/fl_link1",
@@ -85,6 +99,146 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     dome_light = AssetBaseCfg(
         prim_path="/World/DomeLight",
         spawn=sim_utils.DomeLightCfg(color=(0.9, 0.9, 0.9), intensity=2500.0),
+    )
+
+    # Shelf - placed behind the table
+    # Back panel
+    shelf_back = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Shelf/Back",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.02, 0.6, 1.2),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.4, 0.3, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.8, 0.6)),
+    )
+
+    # Shelf levels (3 shelves)
+    shelf_bottom = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Shelf/Bottom",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.4, 0.6, 0.02),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.4, 0.3, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, 0.8, 0.1)),
+    )
+
+    shelf_middle = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Shelf/Middle",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.4, 0.6, 0.02),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.4, 0.3, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, 0.8, 0.5)),
+    )
+
+    shelf_top = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Shelf/Top",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.4, 0.6, 0.02),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.4, 0.3, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, 0.8, 0.9)),
+    )
+
+    # Side panels
+    shelf_left = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Shelf/Left",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.4, 0.02, 1.2),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.4, 0.3, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, 0.51, 0.6)),
+    )
+
+    shelf_right = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Shelf/Right",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.4, 0.02, 1.2),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.4, 0.3, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, 1.09, 0.6)),
+    )
+
+    # Bucket - open-top container on the table
+    # Bucket bottom
+    bucket_bottom = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Bucket/Bottom",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.15, 0.15, 0.01),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.6, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, -0.1, 0.405)),
+    )
+
+    # Bucket sides
+    bucket_side1 = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Bucket/Side1",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.15, 0.01, 0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.6, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, -0.175, 0.46)),
+    )
+
+    bucket_side2 = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Bucket/Side2",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.15, 0.01, 0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.6, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, -0.025, 0.46)),
+    )
+
+    bucket_side3 = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Bucket/Side3",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.01, 0.15, 0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.6, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.125, -0.1, 0.46)),
+    )
+
+    bucket_side4 = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Bucket/Side4",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.01, 0.15, 0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.6, 0.2)),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.275, -0.1, 0.46)),
+    )
+
+    graspable_item = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Item",
+        spawn=RigidBodyCfg(
+            usd_path=MUSTARD_JAR_USD_PATH,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=5.0,
+            ),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, -0.1, 0.5)),
     )
 
 
@@ -138,11 +292,46 @@ class ObservationsCfg:
     policy: PolicyCfg = PolicyCfg()
 
 
+ITEM_USD_PATHS = [
+    MUSTARD_JAR_USD_PATH,
+    OIL_TIN_USD_PATH,
+    SALT_BOX_USD_PATH,
+    BLUE_TIN_USD_PATH,
+    TIN_CAN_USD_PATH,
+]
+
+
+def spawn_random_item(env, scene_entity: SceneEntityCfg = SceneEntityCfg("graspable_item")):
+    """Spawn a randomly selected item in the bin on environment reset."""
+    from isaaclab.scene import InteractiveScene
+    from isaaclab.sim import SimulationContext
+    import omni.usd
+    from pxr import UsdGeom
+
+    selected_path = random.choice(ITEM_USD_PATHS)
+
+    for env_idx in range(env.num_envs):
+        prim_path = f"{env.env_ns}/Item"
+
+        stage = omni.usd.get_context().get_stage()
+        if stage.GetPrimAtPath(prim_path):
+            stage.RemovePrim(prim_path)
+
+        omni.usd.get_context().get_stage().DefinePrim(prim_path, "Xform").GetReferences().AddReference(selected_path)
+
+        prim = stage.GetPrimAtPath(prim_path)
+        if prim.IsValid():
+            UsdGeom.XformCommonAPI(prim).SetTranslate((0.2, -0.1, 0.5))
+
+    return torch.zeros(env.num_envs, device=env.device)
+
+
 @configclass
 class EventCfg:
     """Configuration for events."""
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+    spawn_item = EventTerm(func=spawn_random_item, mode="reset")
 
 
 @configclass
@@ -186,9 +375,9 @@ class ShelfSimEnvCfg(ManagerBasedRLEnvCfg):
         # general settings
         self.decimation = 2
         self.episode_length_s = 10.0
-        # viewer -- camera looking at the table from front-right
-        self.viewer.eye = (1.5, -1.5, 1.2)
-        self.viewer.lookat = (0.4, 0.0, 0.4)
+        # viewer -- camera positioned to see full scene (robot, table, bucket, shelf)
+        self.viewer.eye = (1.2, -1.2, 1.5)
+        self.viewer.lookat = (0.15, 0.3, 0.5)
         # simulation settings
         self.sim.dt = 0.01  # 100 Hz
         self.sim.render_interval = self.decimation
