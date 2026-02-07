@@ -303,8 +303,6 @@ ITEM_USD_PATHS = [
 
 def spawn_random_item(env, scene_entity: SceneEntityCfg = SceneEntityCfg("graspable_item")):
     """Spawn a randomly selected item in the bin on environment reset."""
-    from isaaclab.scene import InteractiveScene
-    from isaaclab.sim import SimulationContext
     import omni.usd
     from pxr import UsdGeom
 
@@ -322,8 +320,6 @@ def spawn_random_item(env, scene_entity: SceneEntityCfg = SceneEntityCfg("graspa
         prim = stage.GetPrimAtPath(prim_path)
         if prim.IsValid():
             UsdGeom.XformCommonAPI(prim).SetTranslate((0.2, -0.1, 0.5))
-
-    return torch.zeros(env.num_envs, device=env.device)
 
 
 @configclass
