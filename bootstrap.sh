@@ -5,8 +5,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_SOURCE="${REPO_ROOT}/projects/shelf_sim/source/shelf_sim"
 
 # Configurable constants (edit here when needed).
-ASSETS_DIR="/workspace/assets"
-DOWNLOADS_DIR="${ASSETS_DIR}/downloads"
+# Assets are stored in the extension's data directory (gitignored)
+ASSETS_DIR="${PROJECT_SOURCE}/shelf_sim/data/Props"
+DOWNLOADS_DIR="/tmp/shelf_sim_downloads"
 ASSETS_ZIP_URL="https://drive.google.com/uc?id=13GMQuDB87-cP5kB_MRCS5-M5Nnid1Tkq"
 ASSETS_ZIP_NAME="shelf_sim_assets.zip"
 
@@ -30,6 +31,8 @@ fi
 echo "Installing shelf_sim as an Isaac Lab extension (editable)."
 python -m pip install -e "${PROJECT_SOURCE}"
 
+# Create data directory for assets
+mkdir -p "${ASSETS_DIR}"
 mkdir -p "${DOWNLOADS_DIR}"
 
 download_and_extract() {
@@ -48,3 +51,13 @@ download_and_extract() {
 python -m pip install gdown
 
 download_and_extract "${ASSETS_ZIP_URL}"
+
+# Remove temporary downloads directory
+rm -rf "${DOWNLOADS_DIR}" 2>/dev/null || true
+
+# Remove macOS metadata files
+find "${ASSETS_DIR}" -name "__MACOSX" -type d -exec rm -rf {} + 2>/dev/null || true
+
+echo "Assets installed to: ${ASSETS_DIR}"
+echo "You can now reference them using:"
+echo "  from shelf_sim import MUSTARD_JAR_USD_PATH, OIL_TIN_USD_PATH, etc."

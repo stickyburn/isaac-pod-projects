@@ -15,6 +15,9 @@
 **/*.usdz
 **/assets/
 
+# Extension data (assets downloaded by init script)
+**/projects/**/data/
+
 # Python
 .DS_Store
 **/*.egg-info/
