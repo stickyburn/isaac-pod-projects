@@ -3,6 +3,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 from isaaclab.envs.mdp import DifferentialIKControllerCfg
+from isaaclab.sensors import CameraCfg, FrameTransformerCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
@@ -52,6 +54,33 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     # robot
     robot: ArticulationCfg = PIPER_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
+    ee_frame = FrameTransformerCfg(
+        prim_path="{ENV_REGEX_NS}/Robot",
+        target_frames=[
+            FrameTransformerCfg.FrameCfg(
+                name="ee_frame",
+                prim_path="{ENV_REGEX_NS}/Robot/fl_link6",
+                offset=OffsetCfg(pos=(0.0, 0.0, 0.0)),
+            )
+        ],
+        debug_vis=True,
+    )
+
+    wrist_camera = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/fl_link6/camera",
+        update_period=0.1,
+        height=480,
+        width=640,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 1.0e5),
+        ),
+        offset=CameraCfg.OffsetCfg(pos=(0.1, 0.0, 0.05), rot=(0.5, 0.5, -0.5, -0.5)),
+    )
+
     # lights
     dome_light = AssetBaseCfg(
         prim_path="/World/DomeLight",
@@ -76,7 +105,7 @@ class ActionsCfg:
         asset_name="robot",
         joint_names=["fl_joint[1-6]"],
         scale=0.5,
-        body_name="fl_joint6",
+        body_name="fl_link6",
         controller=DifferentialIKControllerCfg(
             command_type="pose",
             use_relative_mode=True,
