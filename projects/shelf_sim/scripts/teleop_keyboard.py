@@ -70,6 +70,21 @@ class RateLimiter:
             self.next_time = time.time() + self.period
 
 
+def _focus_sim_window() -> None:
+    """Attempt to focus the Isaac Sim app window for keyboard input."""
+    try:
+        import omni.appwindow
+
+        app_window = omni.appwindow.get_default_app_window()
+        if app_window is None:
+            return
+        app_window.focus()
+        if not app_window.is_focused():
+            print("[WARN] Isaac Sim window not focused. Click the viewport to capture keyboard input.")
+    except Exception as exc:  # pragma: no cover - best-effort focus
+        print(f"[WARN] Could not focus Isaac Sim window: {exc}")
+
+
 def _configure_recording(env_cfg) -> str | None:
     if not args_cli.record_hdf5:
         return None
@@ -154,6 +169,8 @@ def main():
     teleop_interface.add_callback("ENTER", request_save)
     teleop_interface.add_callback("RETURN", request_save)
     teleop_interface.add_callback("ESCAPE", request_quit)
+
+    _focus_sim_window()
 
     # reset environment
     env.reset()
