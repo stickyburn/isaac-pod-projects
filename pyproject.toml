@@ -1,7 +1,13 @@
 [tool.pyright]
-venvPath = "/opt"
 venv = "isaaclab-env"
 useLibraryCodeForTypes = true
+extraPaths = [
+  "/opt/IsaacLab/source/isaaclab",
+  "/opt/IsaacLab/source/isaaclab_assets",
+  "/opt/IsaacLab/source/isaaclab_mimic",
+  "/opt/IsaacLab/source/isaaclab_rl",
+  "/opt/IsaacLab/source/isaaclab_tasks"
+]
 exclude = [
   "**/site-packages",
   "**/node_modules",
