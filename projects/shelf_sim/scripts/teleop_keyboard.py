@@ -99,6 +99,7 @@ def main():
 
     # create environment
     env = gym.make(args_cli.task, cfg=env_cfg)
+    base_env = env.unwrapped
 
     # print info
     print(f"[INFO]: Gym observation space: {env.observation_space}")
@@ -171,7 +172,7 @@ def main():
             command = teleop_interface.advance()
 
             # Create action tensor and broadcast to all envs
-            actions = torch.zeros((env.num_envs, action_dim), device=env.unwrapped.device)
+            actions = torch.zeros((base_env.num_envs, action_dim), device=base_env.device)
             actions[:, : command.numel()] = command
 
             # Apply the action
@@ -180,12 +181,12 @@ def main():
             # Handle save to HDF5
             if state["save"]:
                 if args_cli.record_hdf5:
-                    env.recorder_manager.record_pre_reset([0], force_export_or_skip=False)
-                    env.recorder_manager.set_success_to_episodes(
-                        [0], torch.tensor([[True]], dtype=torch.bool, device=env.device)
+                    base_env.recorder_manager.record_pre_reset([0], force_export_or_skip=False)
+                    base_env.recorder_manager.set_success_to_episodes(
+                        [0], torch.tensor([[True]], dtype=torch.bool, device=base_env.device)
                     )
-                    env.recorder_manager.export_episodes([0])
-                    count = env.recorder_manager.exported_successful_episode_count
+                    base_env.recorder_manager.export_episodes([0])
+                    count = base_env.recorder_manager.exported_successful_episode_count
                     print(f"[INFO] Saved successful demo #{count}.")
                 else:
                     print("[WARN] Recording disabled. Use --record_hdf5 to save demos.")
@@ -199,15 +200,15 @@ def main():
 
             # Reset environment if requested
             if state["reset"]:
-                env.sim.reset()
+                base_env.sim.reset()
                 if args_cli.record_hdf5:
-                    env.recorder_manager.reset()
+                    base_env.recorder_manager.reset()
                 env.reset()
                 teleop_interface.reset()
                 state["reset"] = False
 
         if rate_limiter:
-            rate_limiter.sleep(env)
+            rate_limiter.sleep(base_env)
 
     # close the simulator
     env.close()
