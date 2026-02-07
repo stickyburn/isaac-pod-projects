@@ -2,6 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
+from isaaclab.envs.mdp import DifferentialIKControllerCfg
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
@@ -20,7 +21,7 @@ from . import mdp
 # Pre-defined configs
 ##
 
-from shelf_sim.robots import PIPER_CFG  # isort:skip
+from shelf_sim.robots import PIPER_HIGH_PD_CFG  # isort:skip
 
 ##
 # Scene definition
@@ -45,16 +46,16 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.2, 0.2)),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.4, 0.0, 0.375)),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.6, 0.0, 0.375)),
     )
 
     # robot
-    robot: ArticulationCfg = PIPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot: ArticulationCfg = PIPER_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
     # lights
     dome_light = AssetBaseCfg(
         prim_path="/World/DomeLight",
-        spawn=sim_utils.DomeLightCfg(color=(0.9, 0.9, 0.9), intensity=3000.0),
+        spawn=sim_utils.DomeLightCfg(color=(0.9, 0.9, 0.9), intensity=2500.0),
     )
 
 
@@ -71,11 +72,16 @@ class ActionsCfg:
     We will switch to IK control after verifying joint/link names.
     """
 
-    arm_action = mdp.JointPositionActionCfg(
+    arm_action = mdp.DifferentialInverseKinematicsActionCfg(
         asset_name="robot",
         joint_names=["fl_joint[1-6]"],
         scale=0.5,
-        use_default_offset=True,
+        body_name="fl_joint6",
+        controller=DifferentialIKControllerCfg(
+            command_type="pose",
+            use_relative_mode=True,
+            ik_method="dls"
+        )
     )
     gripper_action = mdp.BinaryJointPositionActionCfg(
         asset_name="robot",

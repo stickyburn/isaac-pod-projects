@@ -4,7 +4,7 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 
 _PIPER_USD_PATH = str(
-    Path(__file__).resolve().parents[5] / "piper_usd" / "piper_arm.usd"
+    Path(__file__).resolve().parents[5] / "piper_usd" / "piper.usd"
 )
 
 ##
@@ -47,14 +47,14 @@ PIPER_CFG = ArticulationCfg(
         ),
     },
 )
-"""Configuration of Franka Emika Panda robot."""
+"""Configuration of Piper arm."""
 
 
 PIPER_HIGH_PD_CFG = PIPER_CFG.copy()
 PIPER_HIGH_PD_CFG.spawn.rigid_props.disable_gravity = True
 PIPER_HIGH_PD_CFG.actuators["arm_joints"].stiffness = 400.0
 PIPER_HIGH_PD_CFG.actuators["arm_joints"].damping = 80.0
-"""Configuration of Franka Emika Panda robot with stiffer PD control.
+"""Configuration of Piper arm with stiffer PD control.
 
 This configuration is useful for task-space control using differential IK.
 """
