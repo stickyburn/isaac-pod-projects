@@ -6,26 +6,17 @@ from isaaclab.envs.mdp import DifferentialIKControllerCfg
 from isaaclab.sensors import CameraCfg, FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidBodyCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
-from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
-import random
 
 from . import mdp
-from shelf_sim import (
-    MUSTARD_JAR_USD_PATH,
-    OIL_TIN_USD_PATH,
-    SALT_BOX_USD_PATH,
-    BLUE_TIN_USD_PATH,
-    TIN_CAN_USD_PATH,
-)
 
 ##
 # Pre-defined configs
@@ -104,7 +95,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     # Shelf - placed behind the table
     # Back panel
     shelf_back = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Shelf/Back",
+        prim_path="{ENV_REGEX_NS}/ShelfBack",
         spawn=sim_utils.CuboidCfg(
             size=(0.02, 0.6, 1.2),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -116,7 +107,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
 
     # Shelf levels (3 shelves)
     shelf_bottom = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Shelf/Bottom",
+        prim_path="{ENV_REGEX_NS}/ShelfBottom",
         spawn=sim_utils.CuboidCfg(
             size=(0.4, 0.6, 0.02),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -127,7 +118,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     )
 
     shelf_middle = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Shelf/Middle",
+        prim_path="{ENV_REGEX_NS}/ShelfMiddle",
         spawn=sim_utils.CuboidCfg(
             size=(0.4, 0.6, 0.02),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -138,7 +129,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     )
 
     shelf_top = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Shelf/Top",
+        prim_path="{ENV_REGEX_NS}/ShelfTop",
         spawn=sim_utils.CuboidCfg(
             size=(0.4, 0.6, 0.02),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -150,7 +141,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
 
     # Side panels
     shelf_left = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Shelf/Left",
+        prim_path="{ENV_REGEX_NS}/ShelfLeft",
         spawn=sim_utils.CuboidCfg(
             size=(0.4, 0.02, 1.2),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -161,7 +152,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     )
 
     shelf_right = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Shelf/Right",
+        prim_path="{ENV_REGEX_NS}/ShelfRight",
         spawn=sim_utils.CuboidCfg(
             size=(0.4, 0.02, 1.2),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -174,7 +165,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     # Bucket - open-top container on the table
     # Bucket bottom
     bucket_bottom = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Bucket/Bottom",
+        prim_path="{ENV_REGEX_NS}/BucketBottom",
         spawn=sim_utils.CuboidCfg(
             size=(0.15, 0.15, 0.01),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -186,7 +177,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
 
     # Bucket sides
     bucket_side1 = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Bucket/Side1",
+        prim_path="{ENV_REGEX_NS}/BucketSide1",
         spawn=sim_utils.CuboidCfg(
             size=(0.15, 0.01, 0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -197,7 +188,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     )
 
     bucket_side2 = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Bucket/Side2",
+        prim_path="{ENV_REGEX_NS}/BucketSide2",
         spawn=sim_utils.CuboidCfg(
             size=(0.15, 0.01, 0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -208,7 +199,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     )
 
     bucket_side3 = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Bucket/Side3",
+        prim_path="{ENV_REGEX_NS}/BucketSide3",
         spawn=sim_utils.CuboidCfg(
             size=(0.01, 0.15, 0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -219,7 +210,7 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
     )
 
     bucket_side4 = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Bucket/Side4",
+        prim_path="{ENV_REGEX_NS}/BucketSide4",
         spawn=sim_utils.CuboidCfg(
             size=(0.01, 0.15, 0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -229,16 +220,19 @@ class ShelfSimSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.275, -0.1, 0.46)),
     )
 
-    graspable_item = AssetBaseCfg(
+    graspable_item = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Item",
-        spawn=RigidBodyCfg(
-            usd_path=MUSTARD_JAR_USD_PATH,
+        spawn=sim_utils.CuboidCfg(
+            size=(0.06, 0.06, 0.12),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
             ),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.3),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.8, 0.1)),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.2, -0.1, 0.5)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.2, -0.1, 0.5)),
     )
 
 
@@ -292,42 +286,11 @@ class ObservationsCfg:
     policy: PolicyCfg = PolicyCfg()
 
 
-ITEM_USD_PATHS = [
-    MUSTARD_JAR_USD_PATH,
-    OIL_TIN_USD_PATH,
-    SALT_BOX_USD_PATH,
-    BLUE_TIN_USD_PATH,
-    TIN_CAN_USD_PATH,
-]
-
-
-def spawn_random_item(env, scene_entity: SceneEntityCfg = SceneEntityCfg("graspable_item")):
-    """Spawn a randomly selected item in the bin on environment reset."""
-    import omni.usd
-    from pxr import UsdGeom
-
-    selected_path = random.choice(ITEM_USD_PATHS)
-
-    for env_idx in range(env.num_envs):
-        prim_path = f"{env.env_ns}/Item"
-
-        stage = omni.usd.get_context().get_stage()
-        if stage.GetPrimAtPath(prim_path):
-            stage.RemovePrim(prim_path)
-
-        omni.usd.get_context().get_stage().DefinePrim(prim_path, "Xform").GetReferences().AddReference(selected_path)
-
-        prim = stage.GetPrimAtPath(prim_path)
-        if prim.IsValid():
-            UsdGeom.XformCommonAPI(prim).SetTranslate((0.2, -0.1, 0.5))
-
-
 @configclass
 class EventCfg:
     """Configuration for events."""
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
-    spawn_item = EventTerm(func=spawn_random_item, mode="reset")
 
 
 @configclass
